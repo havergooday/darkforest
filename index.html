@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>숲</title>
+<style>
+  :root{
+    --bg:#0e1319; --bg-night:#080b10; --panel:#151b23; --panel-2:#1c242e;
+    --line:#26313d; --text:#d6dde5; --dim:#7b8794; --faint:#3d4854;
+    --ember:#e0813c; --frost:#6ea8d4; --blood:#c25b53; --moss:#82a86a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:ui-monospace,"SFMono-Regular","D2Coding","Consolas",monospace;
+    font-size:14px; line-height:1.5;
+    transition:background .6s ease;
+    padding:24px 16px 60px;
+  }
+  body.night{background:var(--bg-night)}
+  .wrap{max-width:760px;margin:0 auto}
+  h1{font-size:13px;font-weight:400;letter-spacing:.3em;color:var(--dim);margin:0 0 20px;text-transform:uppercase}
+
+  .stats{margin-bottom:16px}
+  .stat{display:flex;align-items:center;gap:10px;margin-bottom:5px}
+  .stat b{font-weight:400;color:var(--dim);width:38px;font-size:12px}
+  .track{flex:1;max-width:200px;height:5px;background:var(--panel-2);border-radius:3px;overflow:hidden}
+  .fill{display:block;height:100%;transition:width .25s ease}
+  .num{font-size:11px;color:var(--faint);width:28px;text-align:right}
+
+  .clock{font-size:12px;color:var(--dim);margin-bottom:8px;letter-spacing:.05em}
+
+  .cols{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start}
+  .grid{display:grid;grid-template-columns:repeat(7,36px);gap:3px}
+  .cell{
+    all:unset;width:36px;height:36px;display:flex;align-items:center;justify-content:center;
+    font-size:15px;border-radius:3px;border:1px solid transparent;color:var(--faint);
+    transition:background .2s
+  }
+  .cell.vis{color:var(--text)}
+  .cell.peek{background:var(--panel)}
+  .cell.dry{color:var(--faint)}
+  .cell.mem{color:var(--dim)}
+  .cell.base{background:#2a1f16;color:var(--ember)}
+  .cell.go{border-color:var(--line);cursor:pointer}
+  .cell.go:hover{background:var(--panel-2)}
+  .cell.me{background:var(--frost);color:#0e1319;border-color:var(--frost)}
+  .cell:focus-visible{outline:2px solid var(--frost);outline-offset:1px}
+
+  .legend{font-size:11px;color:var(--faint);margin-top:10px;line-height:1.8}
+  .side{flex:1;min-width:250px}
+  .here{font-size:13px;margin-bottom:6px}
+  .bag{font-size:12px;color:var(--dim);margin-bottom:12px;line-height:1.7}
+  .bag .tools{color:var(--ember)}
+  .bag .keep{color:var(--frost)}
+
+  .acts{display:flex;flex-direction:column;gap:5px}
+  .acts h2{font-size:11px;font-weight:400;color:var(--faint);letter-spacing:.15em;margin:12px 0 2px;text-transform:uppercase}
+  button.act{
+    all:unset;display:flex;justify-content:space-between;gap:12px;align-items:baseline;
+    padding:7px 10px;border:1px solid var(--line);border-radius:3px;
+    font:inherit;font-size:13px;color:var(--text);cursor:pointer;transition:.15s
+  }
+  button.act:hover{background:var(--panel-2);border-color:var(--frost)}
+  button.act:focus-visible{outline:2px solid var(--frost);outline-offset:1px}
+  button.act .note{font-size:11px;color:var(--dim)}
+  .hint{font-size:12px;color:var(--faint);padding:6px 0}
+
+  .log{margin-top:18px;padding-top:12px;border-top:1px solid var(--line);
+       font-size:12.5px;line-height:2;color:var(--dim);min-height:110px}
+  .log div:last-child{color:var(--text)}
+  .log .warn{color:var(--blood)}
+
+  .foot{margin-top:20px;display:flex;gap:8px}
+  .foot button{all:unset;font:inherit;font-size:11px;color:var(--faint);cursor:pointer;
+               border-bottom:1px solid var(--faint);padding-bottom:1px}
+  .foot button:hover{color:var(--text);border-color:var(--text)}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>숲</h1>
+  <div class="stats" id="stats"></div>
+  <div class="cols">
+    <div>
+      <div class="clock" id="clock"></div>
+      <div class="grid" id="grid"></div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="side">
+      <div class="here" id="here"></div>
+      <div class="bag" id="bag"></div>
+      <div class="acts" id="acts"></div>
+    </div>
+  </div>
+  <div class="log" id="log"></div>
+  <div class="foot">
+    <button id="btnReset">처음부터</button>
+    <button id="btnSave">저장</button>
+    <button id="btnLoad">불러오기</button>
+  </div>
+</div>
+
+<script>
+/* ==========================================================================
+   밸런싱 상수 — 여기 숫자만 고치면 된다
+   ========================================================================== */
+var CONFIG = {
+  DAY: 22,            // 낮 길이(턴)
+  NIGHT: 12,          // 밤 길이(턴)
+  DAYS: 3,            // 클리어까지 일수
+
+  START: { hp:100, food:90, temp:90 },
+
+  FOOD_DRAIN: 2,      // 턴당 허기 감소
+  TEMP_DAY: 1,        // 낮 기본 체온 감소
+  TEMP_NIGHT: 3,      // 밤 기본 체온 감소
+  TEMP_PER_DIST: 0.7, // 거점 1칸당 추가 체온 감소
+  TEMP_FIRE: 12,      // 불 옆 턴당 체온 회복
+
+  HP_STARVE: 4,       // 허기 0일 때 턴당 체력 감소
+  HP_FREEZE: 2,       // 동상일 때 턴당 체력 감소
+  HP_REGEN: 1,        // 허기 50 초과 시 턴당 체력 회복
+  DEATH: false,       // true면 체력 0에서 사망
+
+  FIRE_COST: {stick:5}, // 불을 피우는 데 드는 재료
+  FIRE_START: 14,     // 위 재료로 붙는 불의 지속 턴
+  FIRE_PER_STICK: 3,  // 장작 1개당 추가 턴
+
+  CAP: 20, CAP_PACK: 40,          // 소지 한도
+  GATHER: { stick:4, berry:3, stone:2, vine:2 },
+  FOOD_VALUE: { berry:20, fish:32, meat:45 },
+  HUNT_RATE: 0.55, HUNT_HURT: 8, HUNT_TURNS: 3,
+  FISH_RATE: 0.70, FISH_TURNS: 2,
+
+  CAMP_LOOT: {paper:1, berry:4, stick:6}, // 야영지를 뒤지면 나오는 것
+  LOOT_TURNS: 0,      // 발견물 하나를 줍는 데 드는 턴 (0이면 탐색 1턴에 포함)
+
+  SEED: {                          // 칸별 자원 잔량
+    F:{stick:12,berry:8,vine:4},
+    D:{stick:16,berry:10,vine:8},
+    R:{stone:10}, W:{}, C:{}, ".":{}
+  },
+  BENCH1:{stick:8,stone:4},
+  BENCH2:{stone:8,vine:4}
+};
+
+var MAP = [
+  "DDFRRDD",
+  "DFFRWDD",
+  "FFWWFFD",
+  "RFF.FCD",
+  "RRFFFFD",
+  "DFWWFDD",
+  "DDDRDDD"
+];
+var BASE = {r:3, c:3};
+
+var TILE = {
+  ".":{n:"빈터",i:"●"}, "F":{n:"숲",i:"♠"}, "W":{n:"냇가",i:"~"},
+  "R":{n:"바위",i:"▲"}, "C":{n:"야영지",i:"♦"}, "D":{n:"깊은 숲",i:"♣"}
+};
+var RES = {stick:"나뭇가지",berry:"열매",stone:"돌",vine:"덩굴",meat:"고기",fish:"물고기",hide:"가죽"};
+// 소지품 — 무게도 한도도 없다. 가지고만 있으면 효과를 낸다
+var SPECIAL = {
+  paper: {n:"낡은 종이 뭉치", note:"소지품 · 지도 기록", d:"지나온 길이 기억에 남는다"}
+};
+var LOOT_ORDER = Object.keys(SPECIAL).concat(["berry","stick","vine","stone","fish","meat","hide"]);
+var RECIPE = {
+  knife:{n:"돌칼",   t:1, cost:{stone:3,stick:2}, d:"깊은 숲에서 사냥할 수 있다"},
+  rod:  {n:"낚싯대", t:1, cost:{stick:4,vine:2},  d:"냇가에서 낚시할 수 있다"},
+  pack: {n:"지게",   t:2, cost:{stick:6,vine:3},  d:"짐을 더 들 수 있다"},
+  axe:  {n:"도끼",   t:2, cost:{stone:5,stick:3}, d:"나뭇가지를 두 배로 모은다"}
+};
+var SAVE_KEY = "forest.save.v1";
+
+/* ========================================================================== */
+
+var S;
+var $ = function(id){ return document.getElementById(id); };
+
+function fresh(){
+  return {
+    r:BASE.r, c:BASE.c,
+    hp:CONFIG.START.hp, food:CONFIG.START.food, temp:CONFIG.START.temp,
+    fuel:0, camp:false, bench:0,
+    bag:{stick:0,berry:0,stone:0,vine:0,meat:0,fish:0,hide:0},
+    tools:{}, keep:{},
+    day:1, turn:1, night:false,
+    seen:{"3,3":true}, stock:{}, loot:{}, log:[], over:false, dead:false
+  };
+}
+function init(){
+  S = fresh();
+  say("눈을 뜨니 숲 한가운데다. 가진 건 아무것도 없다.");
+  say("동쪽 어딘가에 사람이 머문 흔적이 있는 것 같다.");
+  render();
+}
+
+function say(t,warn){ S.log.push({t:t,w:!!warn}); if(S.log.length>6) S.log.shift(); }
+function tileAt(r,c){ return MAP[r][c]; }
+function stockAt(r,c){
+  var k=r+","+c;
+  if(!S.stock[k]) S.stock[k] = Object.assign({}, CONFIG.SEED[tileAt(r,c)]);
+  return S.stock[k];
+}
+function dist(){ return Math.abs(S.r-BASE.r)+Math.abs(S.c-BASE.c); }
+function atBase(){ return S.r===BASE.r && S.c===BASE.c; }
+function near(r,c){ return Math.abs(r-S.r)<=1 && Math.abs(c-S.c)<=1; }
+function step(r,c){ return Math.abs(r-S.r)+Math.abs(c-S.c)===1; }
+function cap(){ return S.tools.pack ? CONFIG.CAP_PACK : CONFIG.CAP; }
+function carried(){ var n=0; for(var k in S.bag) n+=S.bag[k]; return n; }
+function room(){ return cap()-carried(); }
+function tier(){
+  if(S.temp>70) return {k:"따뜻함", m:1,   c:"var(--moss)"};
+  if(S.temp>40) return {k:"서늘함", m:0.8, c:"var(--text)"};
+  if(S.temp>15) return {k:"추움",   m:0.5, c:"var(--ember)"};
+  return {k:"동상", m:0, c:"var(--blood)"};
+}
+
+function tick(n, quiet){
+  n = n || 1;
+  var t0 = S.temp;
+  for(var i=0;i<n;i++){
+    if(S.over) break;
+    if(atBase() && S.fuel>0) S.temp = Math.min(100, S.temp + CONFIG.TEMP_FIRE);
+    else S.temp = Math.max(0, S.temp - (S.night?CONFIG.TEMP_NIGHT:CONFIG.TEMP_DAY) - dist()*CONFIG.TEMP_PER_DIST);
+
+    if(S.fuel>0){ S.fuel--; if(S.fuel===0) say("불이 꺼졌다.", true); }
+
+    S.food = Math.max(0, S.food - CONFIG.FOOD_DRAIN);
+    if(S.food===0) S.hp -= CONFIG.HP_STARVE;
+    else if(S.food>50) S.hp = Math.min(100, S.hp + CONFIG.HP_REGEN);
+    if(S.temp<15) S.hp -= CONFIG.HP_FREEZE;
+
+    if(S.hp<=0){
+      if(CONFIG.DEATH){ S.hp=0; S.dead=true; S.over=true; say("여기까지다.", true); break; }
+      S.hp = 1;
+    }
+
+    S.turn++;
+    if(!S.night && S.turn>CONFIG.DAY){ S.night=true; S.turn=1; say("해가 진다. 숲이 조용해졌다."); }
+    else if(S.night && S.turn>CONFIG.NIGHT){
+      S.night=false; S.turn=1; S.day++;
+      if(S.day>CONFIG.DAYS){ S.over=true; say(CONFIG.DAYS+"일을 버텼다."); }
+      else say("동이 튼다. "+(S.day-1)+"번째 밤을 넘겼다.");
+    }
+  }
+  var d = Math.round(S.temp-t0);
+  if(!quiet && d!==0) say("체온 "+(d>0?"+":"")+d);
+  if(S.food===0) say("배에서 소리가 난다.", true);
+  else if(S.food<25) say("허기가 밀려온다.");
+  if(S.temp<15) say("손끝의 감각이 없다.", true);
+  else if(S.temp<40) say("몸이 떨린다.");
+  autosave();
+  render();
+}
+
+function lack(cost){
+  var miss=[];
+  for(var k in cost) if((S.bag[k]||0) < cost[k]) miss.push(RES[k]+" "+(cost[k]-(S.bag[k]||0))+"개");
+  return miss;
+}
+function pay(cost){ for(var k in cost) S.bag[k] -= cost[k]; }
+function costLabel(cost){
+  return Object.keys(cost).map(function(x){ return RES[x]+" "+cost[x]; }).join(" · ");
+}
+function kept(id){ return (S.keep[id]||0) > 0; }
+function lootAt(r,c){ return S.loot[r+","+c]; }
+function lootLeft(o){ var n=0; for(var k in o) n+=o[k]; return n; }
+// 받침이 있으면 "을", 없으면 "를"
+function obj(w){ return w + (((w.charCodeAt(w.length-1)-0xAC00)%28) ? "을" : "를"); }
+
+function gain(k,n){
+  n = Math.min(n, room());
+  if(n<=0){ say("더 이상 들 수 없다."); return 0; }
+  S.bag[k]+=n; return n;
+}
+
+function move(r,c){
+  if(S.over || !step(r,c)) return;
+  if(tier().m===0 && Math.abs(r-BASE.r)+Math.abs(c-BASE.c) > dist()){
+    say("얼어붙은 몸으로는 더 깊이 갈 수 없다.", true); render(); return;
+  }
+  S.r=r; S.c=c; S.seen[r+","+c]=true;
+  say("→ "+TILE[tileAt(r,c)].n);
+  if(tileAt(r,c)==="C" && !lootAt(r,c)) say("버려진 야영지다. 뭔가 뒤져볼 수 있겠다.");
+  tick(S.temp<40?2:1, true);
+}
+
+function harvest(key){
+  var st=stockAt(S.r,S.c), t=tier();
+  var mult=(key==="stick" && S.tools.axe)?2:1;
+  var want=Math.max(1, Math.round(CONFIG.GATHER[key]*t.m*mult));
+  var got=Math.min(want, st[key]||0);
+  if(got<=0){ say("여긴 더 남은 게 없다."); return render(); }
+  var real=gain(key,got);
+  if(real>0){ st[key]-=real; say(RES[key]+" "+real+"개를 챙겼다. 남음 "+st[key]); }
+  tick(1,true);
+}
+
+function act(id){
+  if(S.over) return;
+  var t=tier();
+  if(CONFIG.GATHER[id]!==undefined) return harvest(id);
+
+  if(id==="search"){
+    S.loot[S.r+","+S.c] = Object.assign({}, CONFIG.CAMP_LOOT);
+    say("낡은 천막 아래를 헤집었다. 쓸 만한 게 몇 가지 남아 있다.");
+    return tick(1,true);
+  }
+  if(id.indexOf("take:")===0){
+    var res=id.split(":")[1], lt=lootAt(S.r,S.c);
+    if(!lt || !lt[res]){ say("여긴 그런 게 없다."); return render(); }
+    if(SPECIAL[res]){
+      var sp=SPECIAL[res];
+      S.keep[res]=(S.keep[res]||0)+lt[res]; lt[res]=0;   // 무게 · 한도 무관
+      say(obj(sp.n)+" 챙겼다. 이제 "+sp.d+".");
+    } else {
+      var took=gain(res, lt[res]);
+      if(took<=0) return render();          // gain()이 한도 초과를 알린다
+      lt[res]-=took;
+      say(RES[res]+" "+took+"개를 챙겼다."+(lt[res]>0?" 아직 "+lt[res]+"개 남아 있다.":""));
+    }
+    if(lootLeft(lt)===0) say("더 뒤질 것이 없다.");
+    if(CONFIG.LOOT_TURNS>0) return tick(CONFIG.LOOT_TURNS,true);
+    autosave(); return render();
+  }
+  if(id==="light"){
+    var fmiss=lack(CONFIG.FIRE_COST);
+    if(fmiss.length){ say("불을 피우려면 "+fmiss.join(", ")+" 더 필요하다."); return render(); }
+    pay(CONFIG.FIRE_COST); S.fuel+=CONFIG.FIRE_START; S.camp=true; say("불이 붙었다. 온기가 돈다."); return tick(); }
+  if(id==="feed"){
+    var n=Math.min(S.bag.stick,6);
+    if(n<=0){ say("넣을 장작이 없다."); return render(); }
+    S.bag.stick-=n; S.fuel+=n*CONFIG.FIRE_PER_STICK; say("장작을 넣었다. 불이 커졌다."); return tick(); }
+  if(id==="rest"){ say("불 옆에 웅크렸다."); return tick(3); }
+
+  if(id==="fish"){
+    if(Math.random() < CONFIG.FISH_RATE*Math.max(0.4,t.m)){ gain("fish",1); say("물고기 한 마리를 건졌다."); }
+    else say("놓쳤다.");
+    return tick(CONFIG.FISH_TURNS,true);
+  }
+  if(id==="hunt"){
+    if(Math.random() < CONFIG.HUNT_RATE*Math.max(0.3,t.m)){ gain("meat",1); gain("hide",1); say("사냥에 성공했다. 고기와 가죽을 얻었다."); }
+    else { S.hp=Math.max(1,S.hp-CONFIG.HUNT_HURT); say("놓쳤다. 넘어지며 다쳤다.", true); }
+    return tick(CONFIG.HUNT_TURNS,true);
+  }
+  if(id.indexOf("eat:")===0){
+    var f=id.split(":")[1];
+    S.bag[f]--; S.food=Math.min(100, S.food+CONFIG.FOOD_VALUE[f]);
+    say({berry:"열매를 먹었다. 금방 꺼질 것 같다.",fish:"물고기를 구워 먹었다.",meat:"고기를 배불리 먹었다."}[f]);
+    return tick(f==="berry"?1:2, true);
+  }
+  if(id==="bench1"||id==="bench2"){
+    var cost = id==="bench1"?CONFIG.BENCH1:CONFIG.BENCH2;
+    if(S.fuel<=0){ say("불을 피워야 제작대를 손볼 수 있다."); return render(); }
+    var bmiss=lack(cost);
+    if(bmiss.length){
+      say((id==="bench1"?"제작대를 세우려면 ":"제작대를 넓히려면 ")+bmiss.join(", ")+" 더 필요하다.");
+      return render();
+    }
+    pay(cost);
+    S.bench = id==="bench1"?1:2;
+    say(id==="bench1"?"제작대를 세웠다. 이제 도구를 만들 수 있다.":"제작대를 넓혔다.");
+    return tick(3);
+  }
+  if(RECIPE[id]){
+    var rc=RECIPE[id], miss=lack(rc.cost);
+    if(miss.length){ say(rc.n+"을 만들려면 "+miss.join(", ")+" 더 필요하다."); return render(); }
+    pay(rc.cost);
+    S.tools[id]=true; say(rc.n+"을 만들었다. "+rc.d);
+    return tick(3);
+  }
+}
+
+/* ---------- 저장 ---------- */
+function autosave(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(S)); }catch(e){} }
+// 저장분을 현재 스키마에 얹는다. 새 필드는 fresh() 기본값을 물려받는다
+function hydrate(o){
+  var s=fresh();
+  if(!o || typeof o!=="object") return s;
+  for(var k in s){
+    if(o[k]===undefined || o[k]===null) continue;
+    if(k==="bag"){
+      if(typeof o.bag==="object")
+        for(var b in s.bag) if(typeof o.bag[b]==="number") s.bag[b]=o.bag[b];
+    } else if(k==="tools"){
+      if(typeof o.tools==="object")
+        for(var t in RECIPE) if(o.tools[t]) s.tools[t]=true;
+    } else if(k==="keep"){
+      if(typeof o.keep==="object")
+        for(var kk in SPECIAL) if(typeof o.keep[kk]==="number" && o.keep[kk]>0) s.keep[kk]=o.keep[kk];
+    } else if(typeof s[k]==="number"){
+      if(typeof o[k]==="number") s[k]=o[k];
+    } else {
+      s[k]=o[k];
+    }
+  }
+  s.r=Math.max(0, Math.min(MAP.length-1,    s.r|0));
+  s.c=Math.max(0, Math.min(MAP[0].length-1, s.c|0));
+  if(!Array.isArray(s.log)) s.log=[];
+  if(typeof s.seen!=="object" || !s.seen) s.seen={};
+  if(typeof s.stock!=="object" || !s.stock) s.stock={};
+  if(typeof s.loot!=="object"  || !s.loot)  s.loot={};
+  if(o.paper===true && !(s.keep.paper>0)) s.keep.paper=1;   // 구버전 플래그 이관
+  return s;
+}
+function load(){
+  try{
+    var raw=localStorage.getItem(SAVE_KEY);
+    if(!raw){ say("저장된 기록이 없다."); return render(); }
+    S=hydrate(JSON.parse(raw)); say("기록을 불러왔다."); render();
+  }catch(e){ say("불러오기에 실패했다.", true); render(); }
+}
+
+/* ---------- 렌더 ---------- */
+function bar(label,v,color){
+  var w=Math.max(0,Math.min(100,v));
+  return '<div class="stat"><b>'+label+'</b><span class="track">'+
+    '<span class="fill" style="width:'+w+'%;background:'+color+'"></span></span>'+
+    '<span class="num">'+Math.round(v)+'</span></div>';
+}
+function actBtn(id,label,note){
+  return '<button class="act" data-a="'+id+'"><span>'+label+'</span>'+
+    (note?'<span class="note">'+note+'</span>':'')+'</button>';
+}
+
+function render(){
+  var t=tier();
+  document.body.classList.toggle("night", S.night);
+
+  $("stats").innerHTML =
+    bar("체력",S.hp,"var(--text)")+
+    bar("허기",S.food, S.food<25?"var(--blood)":"var(--dim)")+
+    bar("체온",S.temp,t.c);
+
+  $("clock").textContent =
+    S.day+"일차 "+(S.night?"밤":"낮")+" "+S.turn+"/"+(S.night?CONFIG.NIGHT:CONFIG.DAY)+
+    " · "+t.k+(S.fuel>0?" · 불 "+S.fuel:"")+(S.bench?" · 제작대 "+S.bench:"");
+
+  var cells="";
+  for(var r=0;r<7;r++) for(var c=0;c<7;c++){
+    var key=r+","+c, k=tileAt(r,c);
+    var me=(S.r===r&&S.c===c), peek=near(r,c), mem=kept("paper")&&S.seen[key];
+    var vis=me||peek||mem;
+    var st=S.stock[key];
+    var dry = st && Object.keys(CONFIG.SEED[k]).length>0 &&
+      Object.keys(CONFIG.SEED[k]).every(function(x){ return (st[x]||0)===0; });
+    if(k==="C"){ var cl=S.loot[key]; dry = !!cl && lootLeft(cl)===0; }
+    var ch = me ? "@" : (vis ? (dry?"·":TILE[k].i) : "·");
+    var cls=["cell"];
+    if(vis) cls.push("vis");
+    if(peek) cls.push("peek");
+    if(dry&&!me) cls.push("dry");
+    if(mem&&!peek&&!me) cls.push("mem");
+    if(r===BASE.r&&c===BASE.c&&S.camp&&!me) cls.push("base");
+    if(step(r,c)) cls.push("go");
+    if(me) cls.push("me");
+    cells+='<button class="'+cls.join(" ")+'" data-r="'+r+'" data-c="'+c+'" '+
+      (step(r,c)?'':'tabindex="-1" ')+'aria-label="'+(vis?TILE[k].n:"미지")+'">'+ch+'</button>';
+  }
+  $("grid").innerHTML=cells;
+  $("legend").innerHTML=(kept("paper")?"기록 있음 · 지나온 칸이 남는다":"기록 없음 · 벗어나면 잊는다")+
+    "<br>@ 나 · ● 거점 · ♠ 숲 · ~ 냇가 · ▲ 바위 · ♦ 야영지 · ♣ 깊은 숲";
+
+  var k=tileAt(S.r,S.c), st=stockAt(S.r,S.c);
+  $("here").textContent = TILE[k].n + (atBase()?" (거점)":" · 거점에서 "+dist()+"칸");
+
+  var items=[]; for(var x in S.bag) if(S.bag[x]>0) items.push(RES[x]+" "+S.bag[x]);
+  var tools=Object.keys(S.tools).map(function(x){ return RECIPE[x].n; });
+  var keeps=[]; for(var kp in SPECIAL) if(kept(kp)) keeps.push(SPECIAL[kp].n+(S.keep[kp]>1?" "+S.keep[kp]:""));
+  $("bag").innerHTML = "짐 "+carried()+"/"+cap()+(items.length?" · "+items.join(" · "):" · 비어 있음")+
+    (tools.length?'<br><span class="tools">도구 · '+tools.join(" · ")+"</span>":"")+
+    (keeps.length?'<br><span class="keep">소지품 · '+keeps.join(" · ")+"</span>":"");
+
+  var a=[];
+  if(S.over){
+    a.push('<div class="hint">'+(S.dead?"체력이 다했다.":"프로토타입은 여기까지다.")+'</div>');
+  } else {
+    if(t.m>0){
+      var anyRes=false;
+      ["stick","berry","vine","stone"].forEach(function(res){
+        if(st[res]>0){ anyRes=true;
+          a.push(actBtn(res, {stick:"나뭇가지를 줍는다",berry:"열매를 딴다",vine:"덩굴을 걷는다",stone:"돌을 줍는다"}[res], "남음 "+st[res])); }
+      });
+      if(!anyRes && Object.keys(CONFIG.SEED[k]).length>0)
+        a.push('<div class="hint">여긴 다 캤다. 다른 칸으로 가야 한다</div>');
+      if(k==="W") a.push(S.tools.rod?actBtn("fish","낚시를 한다",CONFIG.FISH_TURNS+"턴"):'<div class="hint">낚싯대가 있어야 한다</div>');
+      if(k==="D") a.push(S.tools.knife?actBtn("hunt","사냥에 나선다",CONFIG.HUNT_TURNS+"턴"):'<div class="hint">돌칼이 있어야 한다</div>');
+      if(k==="C"){
+        var lt=lootAt(S.r,S.c);
+        if(!lt) a.push(actBtn("search","야영지를 뒤진다","1턴"));
+        else if(lootLeft(lt)>0){
+          a.push("<h2>발견물</h2>");
+          LOOT_ORDER.forEach(function(lr){
+            if(!lt[lr]) return;
+            var sp=SPECIAL[lr];
+            a.push(actBtn("take:"+lr,
+              obj(sp?sp.n:RES[lr])+" 챙긴다",
+              sp ? sp.note : lt[lr]+"개 · 여유 "+room()));
+          });
+        }
+        else a.push('<div class="hint">여긴 다 뒤졌다</div>');
+      }
+    } else {
+      a.push('<div class="hint">얼어서 아무것도 할 수 없다. 불로 돌아가야 한다.</div>');
+    }
+    if(atBase()){
+      if(S.fuel===0){
+        var fm=lack(CONFIG.FIRE_COST);
+        a.push(fm.length ? '<div class="hint">불이 꺼졌다. '+fm.join(", ")+' 필요하다</div>'
+                         : actBtn("light","불을 피운다",costLabel(CONFIG.FIRE_COST)));
+      }
+      else{
+        if(S.bag.stick>0) a.push(actBtn("feed","장작을 넣는다","불 "+S.fuel+"턴"));
+        a.push(actBtn("rest","불 옆에서 쉰다","3턴 · 체온 +"+CONFIG.TEMP_FIRE*3));
+      }
+    }
+    ["berry","fish","meat"].forEach(function(f){
+      if(S.bag[f]>0) a.push(actBtn("eat:"+f, RES[f]+"를 먹는다", "허기 +"+CONFIG.FOOD_VALUE[f]));
+    });
+    if(atBase()){
+      a.push("<h2>거점</h2>");
+      if(S.bench<2){
+        var bc  = S.bench===0 ? CONFIG.BENCH1 : CONFIG.BENCH2;
+        var bid = S.bench===0 ? "bench1" : "bench2";
+        var bl  = S.bench===0 ? "제작대를 만든다" : "제작대를 넓힌다";
+        var bn  = S.bench===0 ? "제작대를 세우려면 " : "제작대를 넓히려면 ";
+        var bm  = lack(bc);
+        if(S.fuel===0)        a.push('<div class="hint">불을 피워야 제작대를 손볼 수 있다</div>');
+        else if(bm.length)    a.push('<div class="hint">'+bn+bm.join(", ")+' 더 필요하다 · '+costLabel(bc)+'</div>');
+        else                  a.push(actBtn(bid, bl, costLabel(bc)));
+      }
+      if(S.bench>0){
+        for(var id in RECIPE){
+          var rc=RECIPE[id];
+          if(rc.t>S.bench||S.tools[id]) continue;
+          a.push(actBtn(id, rc.n, costLabel(rc.cost)));
+        }
+      }
+    }
+  }
+  $("acts").innerHTML=a.join("");
+
+  $("log").innerHTML=S.log.map(function(l){
+    return '<div'+(l.w?' class="warn"':'')+'>› '+l.t+'</div>';
+  }).join("");
+}
+
+/* ---------- 입력 ---------- */
+$("grid").addEventListener("click", function(e){
+  var b=e.target.closest("button"); if(b) move(+b.dataset.r, +b.dataset.c);
+});
+$("acts").addEventListener("click", function(e){
+  var b=e.target.closest("button"); if(b&&b.dataset.a) act(b.dataset.a);
+});
+$("btnReset").addEventListener("click", function(){ localStorage.removeItem(SAVE_KEY); init(); });
+$("btnSave").addEventListener("click", function(){ autosave(); say("저장했다."); render(); });
+$("btnLoad").addEventListener("click", load);
+
+document.addEventListener("keydown", function(e){
+  var d={ArrowUp:[-1,0],ArrowDown:[1,0],ArrowLeft:[0,-1],ArrowRight:[0,1],
+          w:[-1,0],s:[1,0],a:[0,-1],d:[0,1]}[e.key];
+  if(d){ e.preventDefault(); move(S.r+d[0], S.c+d[1]); }
+});
+
+/* ---------- 콘솔 조작 ---------- */
+window.game = {
+  get s(){ return S; },
+  cfg: CONFIG,
+  set: function(k,v){ S[k]=v; render(); return S[k]; },
+  give: function(res,n){ S.bag[res]=(S.bag[res]||0)+(n||10); render(); },
+  all: function(){ for(var k in S.bag) S.bag[k]+=50; S.bench=2; render(); },
+  tool: function(id){ if(id) S.tools[id]=true; else for(var t in RECIPE) S.tools[t]=true; render(); },
+  keep: function(id){ if(id) S.keep[id]=1; else for(var k in SPECIAL) S.keep[k]=1; render(); },
+  reveal: function(){ S.keep.paper=1; for(var r=0;r<7;r++) for(var c=0;c<7;c++) S.seen[r+","+c]=true; render(); },
+  skip: function(n){ tick(n||1); },
+  tune: function(o){ Object.assign(CONFIG,o); render(); },
+  reset: function(){ init(); },
+  help: function(){ console.log(
+    ["game.s              현재 상태 전체",
+     "game.set('temp',100) 값 직접 변경",
+     "game.give('stone',20) 자원 지급",
+     "game.all()           모든 자원 + 제작대 2단계",
+     "game.tool()          도구 전부 해금",
+     "game.keep()          소지품 전부 획득",
+     "game.reveal()        지도 전체 공개",
+     "game.skip(10)        10턴 넘기기",
+     "game.tune({DAY:30})  밸런싱 값 즉시 변경",
+     "game.reset()         새로 시작"].join("\n")); }
+};
+
+init();
+console.log("game.help() 로 조작법 확인");
+</script>
+</body>
+</html>

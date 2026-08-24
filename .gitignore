@@ -1,0 +1,14 @@
+# 백업 · 임시
+*.bak
+*.bak[0-9]
+*.orig
+*~
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# 에디터
+.vscode/
+.idea/

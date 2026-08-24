@@ -1,0 +1,2 @@
+# 저장소에는 LF로 저장하고 LF로 체크아웃한다 (Windows/macOS 혼용 시 diff 노이즈 방지)
+* text=auto eol=lf
