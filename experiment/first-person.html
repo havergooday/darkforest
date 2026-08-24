@@ -5,38 +5,47 @@
 :root{--bg:#0a0e13;--dim:#7b8794;--faint:#3d4854;--frost:#6ea8d4;--ember:#e0813c;--line:#262f39}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:#cdd6de;-webkit-text-size-adjust:100%}
-body{font-family:ui-monospace,SFMono-Regular,Consolas,"D2Coding",monospace;padding:16px 12px 32px}
-.wrap{max-width:900px;margin:0 auto}
+body{font-family:ui-monospace,SFMono-Regular,Consolas,"D2Coding",monospace;padding:14px 12px 28px}
+.wrap{max-width:1680px;margin:0 auto}
 h1{font-size:11px;font-weight:400;letter-spacing:.28em;color:var(--dim);margin:0 0 4px;text-transform:uppercase}
-.sub{font-size:11.5px;color:var(--faint);margin:0 0 12px;line-height:1.6}
+.sub{font-size:11.5px;color:var(--faint);margin:0 0 10px;line-height:1.6}
+.sub a{color:var(--dim)}
 #view{margin:0;line-height:1.0;white-space:pre;background:#070a0e;border:1px solid #1b232c;
       padding:9px;border-radius:3px;overflow:hidden;font-family:inherit}
 #probe{position:absolute;visibility:hidden;white-space:pre;left:-9999px;top:0;font-family:inherit}
 .d0{color:#dbe4ec}.d1{color:#97a5b1}.d2{color:#64717c}.d3{color:#3f4852}.d4{color:#252b32}
-.hud{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--dim);margin:9px 0}
+.a0{color:#f0e2c6}.a1{color:#c9b393}.a2{color:#9a856a}.a3{color:#6e6250}.a4{color:#453e33}
+.hud{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--dim);margin:9px 0}
 .hud b{font-weight:400;color:var(--faint)}
 .hud .on{color:var(--ember)}
-#mini{font-size:12px;line-height:1.3;color:var(--faint);white-space:pre;margin:10px 0 0}
+.cols{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start;margin-top:6px}
+#mini{font-size:12px;line-height:1.3;color:var(--faint);white-space:pre;margin:0}
 #mini .me{color:var(--frost)}
-.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-width:280px;margin:14px 0 0}
+#mini .camp{color:var(--ember)}
+#log{flex:1;min-width:240px;font-size:12.5px;line-height:2;color:var(--dim);
+     border-left:1px solid var(--line);padding-left:16px;min-height:84px}
+#log div:last-child{color:#dbe4ec}
+.ctl{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start;margin-top:14px}
+.pad{display:grid;grid-template-columns:repeat(3,64px);gap:6px}
 .pad button{all:unset;text-align:center;padding:11px 0;border:1px solid var(--line);border-radius:3px;
             font:inherit;font-size:13px;color:var(--dim);cursor:pointer;touch-action:manipulation;
             -webkit-user-select:none;user-select:none}
 .pad button:active{background:#161d25;color:#dbe4ec;border-color:var(--frost)}
 .pad .wide{grid-column:span 3}
-.row{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.side{display:flex;flex-direction:column;gap:7px}
+.row{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
 .row button{all:unset;padding:7px 11px;border:1px solid var(--line);border-radius:3px;
             font:inherit;font-size:11.5px;color:var(--dim);cursor:pointer;touch-action:manipulation}
 .row button:active{background:#161d25;color:#dbe4ec}
 .row label{font-size:11.5px;color:var(--dim);white-space:nowrap}
-input[type=range]{accent-color:var(--ember);flex:1;max-width:220px;min-width:120px}
+input[type=range]{accent-color:var(--ember);width:190px}
 .keys{font-size:11px;color:var(--faint);line-height:1.9;margin-top:12px}
 .keys kbd{color:var(--dim);border:1px solid var(--line);border-radius:2px;padding:0 4px;font:inherit}
-@media (max-width:560px){ .keys{display:none} }
+@media (max-width:620px){ .keys{display:none} .pad{grid-template-columns:repeat(3,1fr);width:100%} }
 </style></head><body><div class="wrap">
 <h1>숲 · 1인칭 실험</h1>
-<p class="sub">본편(<a href="../" style="color:var(--dim)">../</a>)과 같은 7×7 지도를 1인칭 아스키로 그린 실험.
-게임 로직은 없고 걸어보기만 가능하다.</p>
+<p class="sub">본편(<a href="../">../</a>)과 같은 7×7 지도를 1인칭 아스키로 그린 실험. 게임 로직은 없다.
+자연물은 블록 문자(<span style="color:var(--dim)">█▓▒░</span>), 인공물은 아스키(<span style="color:var(--dim)">#=+|</span>) — 멀리서도 구별된다.</p>
 <span id="probe"></span>
 <pre id="view"></pre>
 <div class="hud">
@@ -45,21 +54,30 @@ input[type=range]{accent-color:var(--ember);flex:1;max-width:220px;min-width:120
   <span><b>칸</b> <span id="cell"></span></span>
   <span><b>방위</b> <span id="dir"></span></span>
   <span><b>걸음</b> <span id="steps">0</span></span>
+  <span><b>격자</b> <span id="grid"></span></span>
 </div>
-<div id="mini"></div>
-<div class="pad">
-  <button data-k="a">◀ 좌</button>
-  <button data-k="w">▲ 전진</button>
-  <button data-k="d">우 ▶</button>
-  <button data-k="s" class="wide">▼ 후진</button>
+<div class="cols">
+  <div id="mini"></div>
+  <div id="log"></div>
 </div>
-<div class="row">
-  <button id="bMode">모드 전환</button>
-  <button id="bMap">지도 켜기/끄기</button>
-</div>
-<div class="row" style="align-items:center">
-  <label>불빛 <span id="vnum">20</span></label>
-  <input id="vslide" type="range" min="4" max="24" step="1" value="20">
+<div class="ctl">
+  <div class="pad">
+    <button data-k="a">◀ 좌</button>
+    <button data-k="w">▲ 전진</button>
+    <button data-k="d">우 ▶</button>
+    <button data-k="s" class="wide">▼ 후진</button>
+  </div>
+  <div class="side">
+    <div class="row">
+      <button id="bMode">모드 전환</button>
+      <button id="bMap">지도 켜기/끄기</button>
+      <button id="bReset">처음 위치로</button>
+    </div>
+    <div class="row">
+      <label>불빛 <span id="vnum">20</span></label>
+      <input id="vslide" type="range" min="4" max="26" step="1" value="20">
+    </div>
+  </div>
 </div>
 <div class="keys">
   <kbd>W</kbd><kbd>S</kbd> 전진·후진 · <kbd>A</kbd><kbd>D</kbd> 회전 · <kbd>Q</kbd><kbd>E</kbd> 좌우 이동(자유 모드)
@@ -74,27 +92,66 @@ input[type=range]{accent-color:var(--ember);flex:1;max-width:220px;min-width:120
 var MAP=["DDFRRDD","DFFRWDD","FFWWFFD","RFF.FCD","RRFFFFD","DFWWFDD","DDDRDDD"];
 var NAME={".":"빈터","F":"숲","W":"냇가","R":"바위","C":"야영지","D":"깊은 숲"};
 var CELL=8, FOV=Math.PI/3, VIEW=20;
-var W=78, H=22;                                   // 화면 크기에 맞춰 재계산된다
+var W=140, H=46;                                  // 화면 크기에 맞춰 재계산된다
 
 function hash(a,b){var h=(a*374761393+b*668265263)>>>0;h=(h^(h>>13))*1274126177>>>0;return (h^(h>>16))>>>0;}
 function tileAt(wx,wy){var c=Math.floor(wx/CELL),r=Math.floor(wy/CELL);
   return (r<0||r>6||c<0||c>6)?null:MAP[r][c];}
 
-/* 씨앗 고정 — 나무 배치가 매번 같아야 지도가 지도로 기능한다 */
+/* 종류별 스프라이트 규격.
+   자연물은 블록 문자, 인공물은 아스키 — 멀리서도 사람이 만든 것임이 읽힌다.
+   h=높이계수(거리로 나눔) wr=폭비(높이/wr) top·bot=지평선 기준 위아래 비율 */
+var KIND={
+  tree: { canopy:["█","▓","▒","░","·"], trunk:["║","║","│","│","·"],
+          h:3.4, cwr:4.5, twr:16, top:0.80, mid:0.26, bot:0.05 },
+  rock: { ramp:["█","▓","▒","░","·"], h:1.0, wr:1.8, top:0.30, bot:0.14, shape:"box" },
+  tent: { ramp:["#","=","=","-","-"], h:1.7, wr:0.85, top:0.58, bot:0.10, shape:"tent", art:1 },
+  pit:  { ramp:["*","*","+",".","."], h:0.55,wr:0.45, top:0.02, bot:0.18, shape:"dome", art:1 },
+  post: { ramp:["|","|","!",":","."], h:2.6, wr:11,   top:0.88, bot:0.05, shape:"box", art:1 },
+  /* 나무(h 3.4)보다 높다. 같은 거리에서 수관 위로 솟으므로 멀리서 먼저 읽힌다.
+     숲에서 사람의 자리를 알아보는 실제 방식이 이것이다 */
+  mast: { ramp:["|","|","|","!",":"], h:4.6, wr:15,   top:0.93, bot:0.04, shape:"box", art:1 }
+};
+
+/* 씨앗 고정 — 나무 배치가 매번 같아야 지도가 지도로 기능한다.
+   야영지(C)에는 나무를 두지 않는다. 빽빽한 숲 사이의 빈 자리가
+   멀리서 먼저 읽히고, 그게 "저기 뭔가 있다"의 정체가 된다. */
+var CLEAR=0.34;   // 칸 중심에서 이만큼(칸 단위)은 비워둔다
+
 var OBJ=(function(){
   var s=20250824, rnd=function(){s=(s*1664525+1013904223)>>>0;return s/4294967296;};
-  var TREE={D:8,F:5,C:2,R:0,W:0,".":0}, ROCK={R:4,D:1}, out=[];
+  var TREE={D:8,F:5,C:0,R:0,W:0,".":0}, ROCK={R:4,D:1}, out=[];
+
+  /* 격자 이동은 칸 중심에서 칸 중심으로 간다. 중심 주변을 비워두지 않으면
+     나무를 통과해 지나가게 되고, 화면이 기둥으로 덮여 몰입이 깨진다.
+     비워두면 나무 사이로 길이 생긴다 — 충돌 처리 없이 같은 효과. */
+  function place(c,r,k){
+    for(var t=0;t<24;t++){
+      var fx=0.08+rnd()*0.84, fy=0.08+rnd()*0.84;
+      if(Math.hypot(fx-0.5,fy-0.5) > CLEAR)
+        return out.push({x:(c+fx)*CELL, y:(r+fy)*CELL, k:k});
+    }
+  }
   for(var r=0;r<7;r++)for(var c=0;c<7;c++){var t=MAP[r][c],i;
-    for(i=0;i<(TREE[t]||0);i++) out.push({x:(c+rnd())*CELL,y:(r+rnd())*CELL,k:0});
-    for(i=0;i<(ROCK[t]||0);i++) out.push({x:(c+rnd())*CELL,y:(r+rnd())*CELL,k:1});}
+    for(i=0;i<(TREE[t]||0);i++) place(c,r,"tree");
+    for(i=0;i<(ROCK[t]||0);i++) place(c,r,"rock");}
+
+  /* 야영지 (3,5) — 손으로 배치한 장소. 이게 이 실험의 요점이다.
+     칸 중심 (44,28) 을 밟고 설 수 있도록 바깥으로 벌려 놓는다 */
+  out.push({x:42.4, y:30.4, k:"tent"});   // 남서 — 다가가면 형태가 드러난다
+  out.push({x:45.4, y:26.5, k:"pit"});    // 낮아서 가까이 와야 보인다
+  out.push({x:41.4, y:26.6, k:"mast"});   // 서쪽(거점)에서 나무 위로 솟아 먼저 보이는 것
+  out.push({x:41.5, y:29.8, k:"post"});
+  out.push({x:46.5, y:30.6, k:"post"});
+  out.push({x:46.6, y:25.7, k:"rock"});
   return out;})();
 
+var CAMP={x:44.0, y:28.4};
+
 /* 반복 횟수가 가중치. 대부분 같은 글자, 드물게 다른 글자 → 노이즈가 아니라 질감 */
-var SET={
-  canopy:["█","▓","▒","░","·"], trunk:["║","║","│","│","·"], rock:["█","▓","▒","░","·"],
-  ground:{ F:[",.,..","..,."," .. "," "," "], D:[";,;..",",.,."," . "," "," "],
-           R:["^-...","-.. "," . "," "," "], W:["≈≈~≈","~-. "," - "," "," "],
-           C:["*...",".. "," . "," "," "], ".":[".. "," . "," "," "," "] }};
+var GROUND={ F:[",.,..","..,."," .. "," "," "], D:[";,;..",",.,."," . "," "," "],
+             R:["^-...","-.. "," . "," "," "], W:["≈≈~≈","~-. "," - "," "," "],
+             C:["*..-.",".-. "," . "," "," "], ".":[".. "," . "," "," "," "] };
 
 function render(px,py,hd){
   var buf=[],z=[],lv=[],r,c;
@@ -109,7 +166,7 @@ function render(px,py,hd){
     for(var col=0;col<W;col++){
       var a=hd+(col/W-0.5)*FOV, wx=px+Math.cos(a)*dist, wy=py+Math.sin(a)*dist;
       var t=tileAt(wx,wy); if(t===null) continue;
-      var g=SET.ground[t]||SET.ground.F, v=g[Math.min(g.length-1,L)];
+      var g=GROUND[t]||GROUND.F, v=g[Math.min(g.length-1,L)];
       buf[row][col]=v[(hash(Math.floor(wx*3),Math.floor(wy*3))>>>11)%v.length];
       lv[row][col]=L;
     }
@@ -118,68 +175,105 @@ function render(px,py,hd){
   /* 오브젝트 — 먼 것부터 그려 가까운 것이 덮는다 (화가 알고리즘 + z버퍼) */
   var vis=[],i;
   for(i=0;i<OBJ.length;i++){var o=OBJ[i],d=Math.hypot(o.x-px,o.y-py);
-    if(d>0.4&&d<VIEW) vis.push({x:o.x,y:o.y,k:o.k,d:d});}
+    if(d>0.35&&d<VIEW) vis.push({x:o.x,y:o.y,k:o.k,d:d});}
   vis.sort(function(A,B){return B.d-A.d;});
 
-  function put(col,row,ch,d,L){ if(col<0||col>=W||row<0||row>=H) return;
-    if(d<z[row][col]){buf[row][col]=ch;z[row][col]=d;lv[row][col]=L;} }
+  function put(col,row,ch,d,L,art){ if(col<0||col>=W||row<0||row>=H) return;
+    if(d<z[row][col]){buf[row][col]=ch;z[row][col]=d;lv[row][col]=art?L+10:L;} }
+
+  /* 행마다 폭이 달라지는 스프라이트 — 형태로 종류를 구별시킨다 */
+  function sprite(cx,spec,d,L){
+    var h=(H*spec.h)/d, half=Math.max(1,Math.round(h/spec.wr))>>1;
+    var top=Math.round(hz-h*spec.top), bot=Math.round(hz+h*spec.bot);
+    var span=Math.max(1,bot-top), ch=spec.ramp[L];
+    for(var rr=top;rr<=bot;rr++){
+      var f=(rr-top)/span, k=1;
+      if(spec.shape==="tent") k=0.25+0.75*f;          // 위가 좁은 삼각
+      else if(spec.shape==="dome") k=Math.sqrt(Math.max(0,f)); // 아래가 넓은 둔덕
+      var hw=Math.max(0,Math.round(half*k));
+      for(var cc2=cx-hw;cc2<=cx+hw;cc2++) put(cc2,rr,ch,d,L,spec.art);
+    }
+  }
 
   for(var j=0;j<vis.length;j++){
     var ob=vis[j], rel=Math.atan2(ob.y-py,ob.x-px)-hd;
     while(rel>Math.PI) rel-=2*Math.PI; while(rel<-Math.PI) rel+=2*Math.PI;
     if(Math.abs(rel)>FOV*0.72) continue;
-    var cx=Math.round((rel/FOV+0.5)*W), L2=lvl(ob.d), cc, rr;
-    if(ob.k===0){
-      var h=(H*3.4)/ob.d, cW=Math.max(1,Math.round(h/4.5)), tW=Math.max(1,Math.round(h/16));
-      var top=Math.round(hz-h*0.80), mid=Math.round(hz-h*0.26), bot=Math.round(hz+h*0.05);
-      for(cc=cx-(cW>>1);cc<=cx+(cW>>1);cc++) for(rr=top;rr<mid;rr++) put(cc,rr,SET.canopy[L2],ob.d,L2);
-      for(cc=cx-(tW>>1);cc<=cx+(tW>>1);cc++) for(rr=mid;rr<=bot;rr++) put(cc,rr,SET.trunk[L2],ob.d,L2);
+    var cx=Math.round((rel/FOV+0.5)*W), L2=lvl(ob.d), spec=KIND[ob.k], cc3, rr2;
+
+    if(ob.k==="tree"){
+      var h=(H*spec.h)/ob.d;
+      var cW=Math.max(1,Math.round(h/spec.cwr)), tW=Math.max(1,Math.round(h/spec.twr));
+      var top=Math.round(hz-h*spec.top), mid=Math.round(hz-h*spec.mid), bot=Math.round(hz+h*spec.bot);
+      for(cc3=cx-(cW>>1);cc3<=cx+(cW>>1);cc3++) for(rr2=top;rr2<mid;rr2++) put(cc3,rr2,spec.canopy[L2],ob.d,L2);
+      for(cc3=cx-(tW>>1);cc3<=cx+(tW>>1);cc3++) for(rr2=mid;rr2<=bot;rr2++) put(cc3,rr2,spec.trunk[L2],ob.d,L2);
     } else {
-      var h2=(H*1.0)/ob.d, w2=Math.max(1,Math.round(h2/1.8));
-      var t2=Math.round(hz-h2*0.30), b2=Math.round(hz+h2*0.14);
-      for(cc=cx-(w2>>1);cc<=cx+(w2>>1);cc++) for(rr=t2;rr<=b2;rr++) put(cc,rr,SET.rock[L2],ob.d,L2);
+      sprite(cx,spec,ob.d,L2);
     }
   }
 
   /* 깊이 레벨이 같은 구간을 묶어 span 하나로 — DOM 노드를 줄인다 */
   var esc={"&":"&amp;","<":"&lt;",">":"&gt;"}, html="";
+  /* 10 이상은 인공물 — 같은 깊이라도 다른 색 계열을 쓴다 */
+  var wrap=function(v,run){
+    return "<span class="+(v>=10?("a"+(v-10)):("d"+v))+">"+run+"</span>"; };
   for(r=0;r<H;r++){
     var run="", cur=lv[r][0];
     for(c=0;c<W;c++){
-      if(lv[r][c]!==cur){ html+="<span class=d"+cur+">"+run+"</span>"; run=""; cur=lv[r][c]; }
-      var ch=buf[r][c]; run+= esc[ch]||ch;
+      if(lv[r][c]!==cur){ html+=wrap(cur,run); run=""; cur=lv[r][c]; }
+      var ch2=buf[r][c]; run+= esc[ch2]||ch2;
     }
-    html+="<span class=d"+cur+">"+run+"</span>"+(r<H-1?"\n":"");
+    html+=wrap(cur,run)+(r<H-1?"\n":"");
   }
   return html;
 }
 
-/* ── 화면 크기에 맞춰 문자 격자를 재계산 ─────────────────── */
+/* ── 화면 크기에 맞춰 문자 격자를 재계산 (PC 우선, 넓게) ───── */
 var view=document.getElementById("view"), probe=document.getElementById("probe");
 function fit(){
-  var iw=window.innerWidth;
-  var fs=iw<400?9:iw<560?10.5:iw<760?12:13;
+  var iw=window.innerWidth, ih=window.innerHeight;
+  var fs = iw<400?9 : iw<620?10.5 : iw<900?12 : iw<1400?13 : 14;
   view.style.fontSize=fs+"px"; probe.style.fontSize=fs+"px";
   probe.textContent=new Array(101).join("M");
   var cw=probe.getBoundingClientRect().width/100;
-  var avail=Math.min(900,iw-24)-20;                  // 패딩·보더 제외
-  W=Math.max(34,Math.min(104,Math.floor(avail/cw)));
-  H=Math.max(13,Math.min(26,Math.round(W*0.30)));
+  var avail=Math.min(1680,iw-24)-20;                 // 패딩·보더 제외
+  var maxW=Math.floor(avail/cw);
+  var maxH=Math.floor((ih*0.58)/fs);                  // 조작부가 화면 밖으로 밀리지 않게
+  /* 문자 종횡비(약 0.6) 보정 후 화면 비율이 맞으려면 W ≈ 3H.
+     이 비를 깨면 나무가 납작해진다 — 폭·높이 중 좁은 쪽에 맞춘다 */
+  if(maxW/3 <= maxH){ W=maxW; H=Math.round(W/3); }
+  else { H=maxH; W=H*3; }
+  W=Math.max(34,Math.min(220,W));
+  H=Math.max(13,Math.min(64,H));
+  document.getElementById("grid").textContent=W+"×"+H;
 }
 fit();
 window.addEventListener("resize",fit);
 window.addEventListener("orientationchange",fit);
 
-/* ── 상태 · 이동 ─────────────────────────────────────────────
-   두 모드를 모두 넣었다. 감각 차이를 직접 비교하는 것이 이 실험의 목적.
-   격자 턴제 = 1칸 전진이 1턴, 90도 회전이 1턴 (기존 턴제 설계와 호환)
-   자유 이동 = 연속 이동. 턴 개념이 성립하지 않는다              */
+/* ── 상태 · 이동 ───────────────────────────────────────────── */
 var grid=true, showMap=true, steps=0;
 var cr=3, cc=3, face=0;                        // 격자: 칸 좌표 + 방위(0동 1남 2서 3북)
 var px=(cc+0.5)*CELL, py=(cr+0.5)*CELL, hd=0;  // 렌더 위치 (보간됨)
 var tx=px, ty=py, thd=hd;
 var DIR=[[1,0],[0,1],[-1,0],[0,-1]], DIRN=["동","남","서","북"];
 var held={};
+
+/* ── 발견 로그 ─────────────────────────────────────────────
+   거리 문턱을 넘을 때 한 번씩. 이게 "다가가면 드러난다"의 최소 구현이다 */
+var logs=[], stage=0;
+var BEATS=[
+  {d:16, t:"동쪽 나무들 위로 뭔가 솟아 있다. 나무는 아니다."},
+  {d:10, t:"나무가 없는 자리다. 누군가 세워 놓은 것들이 서 있다."},
+  {d:5.5,t:"무너진 천막이다. 사람이 살던 자리다."},
+  {d:2.5,t:"불자리가 남아 있다. 재가 아직 흩어지지 않았다."}
+];
+function say(t){ logs.push(t); if(logs.length>4) logs.shift();
+  document.getElementById("log").innerHTML=logs.map(function(l){return "<div>› "+l+"</div>";}).join(""); }
+function beats(){
+  var d=Math.hypot(CAMP.x-px, CAMP.y-py);
+  while(stage<BEATS.length && d<BEATS[stage].d){ say(BEATS[stage].t); stage++; }
+}
 
 function stepGrid(sign){
   var d=DIR[face], nc=cc+d[0]*sign, nr=cr+d[1]*sign;
@@ -200,38 +294,42 @@ function act(k){
   if(k==="w") stepGrid(1); else if(k==="s") stepGrid(-1);
   else if(k==="a") turnGrid(-1); else if(k==="d") turnGrid(1);
 }
+function reset(){
+  cr=3; cc=3; face=0; px=tx=(cc+0.5)*CELL; py=ty=(cr+0.5)*CELL; hd=thd=0;
+  steps=0; stage=0; logs=[]; grid=true; held={};
+  say("눈을 뜨니 숲 한가운데다. 가진 건 아무것도 없다.");
+  say("동쪽 어딘가에 사람이 머문 흔적이 있는 것 같다.");
+}
 
+var KMAP={arrowup:"w",arrowdown:"s",arrowleft:"a",arrowright:"d"};
 document.addEventListener("keydown",function(e){
   var k=e.key.toLowerCase();
   if(k==="tab"){ e.preventDefault(); toggleMode(); return; }
   if(k==="m"){ showMap=!showMap; return; }
-  var map={arrowup:"w",arrowdown:"s",arrowleft:"a",arrowright:"d"};
-  if(map[k]) { e.preventDefault(); k=map[k]; }
+  if(KMAP[k]) { e.preventDefault(); k=KMAP[k]; }
   held[k]=true;
   if(grid && "wsad".indexOf(k)>=0) act(k);
 });
 document.addEventListener("keyup",function(e){
-  var k=e.key.toLowerCase();
-  var map={arrowup:"w",arrowdown:"s",arrowleft:"a",arrowright:"d"};
-  held[map[k]||k]=false;
+  var k=e.key.toLowerCase(); held[KMAP[k]||k]=false;
 });
 
 /* 터치·클릭 패드 — 격자 모드는 1회 입력, 자유 모드는 누르는 동안 이동 */
 Array.prototype.forEach.call(document.querySelectorAll(".pad button"),function(b){
   var k=b.getAttribute("data-k");
   b.addEventListener("pointerdown",function(e){ e.preventDefault(); held[k]=true; act(k); });
-  b.addEventListener("pointerup",  function(){ held[k]=false; });
+  b.addEventListener("pointerup",    function(){ held[k]=false; });
   b.addEventListener("pointercancel",function(){ held[k]=false; });
   b.addEventListener("pointerleave", function(){ held[k]=false; });
 });
 document.getElementById("bMode").addEventListener("click",toggleMode);
 document.getElementById("bMap").addEventListener("click",function(){ showMap=!showMap; });
+document.getElementById("bReset").addEventListener("click",reset);
 
 /* 가시거리 = 불빛. 불이 약해질수록 세계가 좁아진다 — 이 실험의 핵심 변수 */
 var vslide=document.getElementById("vslide");
 vslide.addEventListener("input",function(){
-  VIEW=+vslide.value;
-  document.getElementById("vnum").textContent=VIEW;
+  VIEW=+vslide.value; document.getElementById("vnum").textContent=VIEW;
 });
 
 /* ── 루프 ────────────────────────────────────────────────── */
@@ -251,6 +349,7 @@ function loop(ts){
     if(ny>0.6&&ny<7*CELL-0.6) py=ny;
     thd=hd; tx=px; ty=py;
   }
+  beats();
 
   view.innerHTML=render(px,py,hd);
   var t=tileAt(px,py);
@@ -266,7 +365,9 @@ function loop(ts){
     var ICON={".":"●","F":"♠","W":"~","R":"▲","C":"♦","D":"♣"};
     for(var r2=0;r2<7;r2++){
       for(var c2=0;c2<7;c2++){
-        mini += (r2===mr&&c2===mc) ? "<span class=me>@</span>" : ICON[MAP[r2][c2]];
+        if(r2===mr&&c2===mc)        mini += "<span class=me>@</span>";
+        else if(MAP[r2][c2]==="C")  mini += "<span class=camp>♦</span>";
+        else                        mini += ICON[MAP[r2][c2]];
         mini += " ";
       }
       mini+="\n";
@@ -275,5 +376,6 @@ function loop(ts){
   document.getElementById("mini").innerHTML=mini;
   requestAnimationFrame(loop);
 }
+reset();
 requestAnimationFrame(loop);
 </script></body></html>
