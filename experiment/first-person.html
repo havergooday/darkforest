@@ -15,6 +15,7 @@ h1{font-size:11px;font-weight:400;letter-spacing:.28em;color:var(--dim);margin:0
 #probe{position:absolute;visibility:hidden;white-space:pre;left:-9999px;top:0;font-family:inherit}
 .d0{color:#dbe4ec}.d1{color:#97a5b1}.d2{color:#64717c}.d3{color:#3f4852}.d4{color:#252b32}
 .a0{color:#f0e2c6}.a1{color:#c9b393}.a2{color:#9a856a}.a3{color:#6e6250}.a4{color:#453e33}
+.f0{color:#ffdca8}.f1{color:#f0a94e}.f2{color:#b0702c}.f3{color:#6d4520}.f4{color:#3a2615}
 .hud{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--dim);margin:9px 0}
 .hud b{font-weight:400;color:var(--faint)}
 .hud .on{color:var(--ember)}
@@ -46,6 +47,7 @@ input[type=range]{accent-color:var(--ember);width:190px}
 <h1>숲 · 1인칭 실험</h1>
 <p class="sub">본편(<a href="../">../</a>)과 같은 7×7 지도를 1인칭 아스키로 그린 실험. 게임 로직은 없다.
 자연물은 블록 문자(<span style="color:var(--dim)">█▓▒░</span>), 인공물은 아스키(<span style="color:var(--dim)">#=+|</span>) — 멀리서도 구별된다.<br>
+밝기는 거리가 아니라 <b style="color:var(--dim);font-weight:400">그 지점에 닿는 빛</b>이 정한다. 횃불과 모닥불이 감쇠·명멸하고 나무가 그림자를 드리운다.<br>
 충돌은 <b style="color:var(--dim);font-weight:400">자유 이동</b>에서 확실히 체감된다. 격자 턴제는 칸 중심을 잇는 통로가 미리 비워져 있어 부딪힐 일이 거의 없다.</p>
 <span id="probe"></span>
 <pre id="view"></pre>
@@ -57,6 +59,7 @@ input[type=range]{accent-color:var(--ember);width:190px}
   <span><b>걸음</b> <span id="steps">0</span></span>
   <span><b>격자</b> <span id="grid"></span></span>
   <span><b>충돌</b> <span id="col" class="on"></span></span>
+  <span><b>발밑 밝기</b> <span id="lum"></span></span>
 </div>
 <div class="cols">
   <div id="mini"></div>
@@ -74,11 +77,13 @@ input[type=range]{accent-color:var(--ember);width:190px}
       <button id="bMode">모드 전환</button>
       <button id="bMap">지도 켜기/끄기</button>
       <button id="bCollide">충돌 켜짐</button>
+      <button id="bFire">모닥불 켜짐</button>
+      <button id="bShadow">그림자 켜짐</button>
       <button id="bReset">처음 위치로</button>
     </div>
     <div class="row">
-      <label>불빛 <span id="vnum">20</span></label>
-      <input id="vslide" type="range" min="4" max="26" step="1" value="20">
+      <label>횃불 반경 <span id="vnum">9</span></label>
+      <input id="vslide" type="range" min="2" max="22" step="0.5" value="9">
     </div>
   </div>
 </div>
@@ -94,9 +99,12 @@ input[type=range]{accent-color:var(--ember);width:190px}
 
 var MAP=["DDFRRDD","DFFRWDD","FFWWFFD","RFF.FCD","RRFFFFD","DFWWFDD","DDDRDDD"];
 var NAME={".":"빈터","F":"숲","W":"냇가","R":"바위","C":"야영지","D":"깊은 숲"};
-var CELL=8, FOV=Math.PI/3, VIEW=20;
+var CELL=8, FOV=Math.PI/3;
+var VIEW=30;        // 그리기 한계 거리. 실제로 보이는 범위는 빛이 정한다
+var GSPAN=22;       // 바닥이 덮는 거리 (원근 스케일)
 var PLAYER_R=0.18, collide=true;   // 사람 몸 굵기. 이 값이 크면 멀찍이 멈춘다
 var W=140, H=46;                                  // 화면 크기에 맞춰 재계산된다
+var MAXW=150, MAXH=50;                            // 이 이상은 프레임 비용이 감당이 안 된다
 
 function hash(a,b){var h=(a*374761393+b*668265263)>>>0;h=(h^(h>>13))*1274126177>>>0;return (h^(h>>16))>>>0;}
 function tileAt(wx,wy){var c=Math.floor(wx/CELL),r=Math.floor(wy/CELL);
@@ -114,7 +122,9 @@ var KIND={
   post: { ramp:["|","|","!",":","."], h:2.6, wr:11,   top:0.88, bot:0.05, shape:"box", art:1 },
   /* 나무(h 3.4)보다 높다. 같은 거리에서 수관 위로 솟으므로 멀리서 먼저 읽힌다.
      숲에서 사람의 자리를 알아보는 실제 방식이 이것이다 */
-  mast: { ramp:["|","|","|","!",":"], h:4.6, wr:15,   top:0.93, bot:0.04, shape:"box", art:1 }
+  mast: { ramp:["|","|","|","!",":"], h:4.6, wr:15,   top:0.93, bot:0.04, shape:"box", art:1 },
+  /* 불꽃. 매 프레임 글자가 바뀌어 흔들린다 */
+  fire: { ramp:["#","*","+",".","."], h:1.05, wr:0.6, top:0.52, bot:0.10, shape:"tent", flame:1 }
 };
 
 /* 스프라이트가 실제로 차지하는 월드 반지름을 렌더 기하에서 되돌려 구한다.
@@ -164,6 +174,7 @@ var OBJ=(function(){
      칸 중심 (44,28) 을 밟고 설 수 있도록 바깥으로 벌려 놓는다 */
   out.push({x:41.2, y:30.8, k:"tent"});   // 남서 — 다가가면 형태가 드러난다
   out.push({x:45.4, y:26.5, k:"pit"});    // 낮아서 가까이 와야 보인다
+  out.push({x:45.4, y:26.5, k:"fire"});   // 그 위에서 타는 불
   out.push({x:41.4, y:26.6, k:"mast"});   // 서쪽(거점)에서 나무 위로 솟아 먼저 보이는 것
   out.push({x:41.5, y:29.8, k:"post"});
   out.push({x:46.5, y:30.6, k:"post"});
@@ -171,6 +182,85 @@ var OBJ=(function(){
   return out;})();
 
 var CAMP={x:44.0, y:28.4};
+
+/* ── 광원 ──────────────────────────────────────────────────
+   밝기를 거리가 아니라 빛으로 정한다. 이 게임에서 불은 이미 체온이자
+   시간이고 탐험 예산인데, 1인칭에서는 시야까지 겸한다 — 그 규칙이
+   규칙이 아니라 화면 자체가 된다. */
+var AMBIENT = 0.020;                                   // 달빛. 이것만으로는 거의 안 보인다
+var TORCH   = { r:9.0, i:0.95, seed:4.1, f:1 };        // 플레이어가 든 것
+var LIGHTS  = [
+  /* 모닥불은 멀리까지 번진다 — 야영지가 등대가 되어야 찾아갈 이유가 생긴다 */
+  { x:45.4, y:26.5, r:20, i:1.35, seed:1.7, on:true, f:1 }
+];
+var tSec = 0, shadows = true;
+
+/* 불은 고르게 타지 않는다. 주기가 다른 사인 둘을 겹쳐 규칙성을 지운다.
+   아스키에서는 글자가 불연속이라 이 흔들림이 특히 잘 읽힌다 */
+function flick(seed){
+  return 0.86 + 0.09*Math.sin(tSec*11.3 + seed) + 0.05*Math.sin(tSec*24.7 + seed*2.3);
+}
+/* 명멸은 프레임에 한 번만 계산한다. 표본마다 부르면 sin 이 프레임당
+   1만 번 넘게 돌아 렌더 비용을 지배한다 */
+function tickLights(){
+  TORCH.f = flick(TORCH.seed);
+  for(var i=0;i<LIGHTS.length;i++) LIGHTS[i].f = flick(LIGHTS[i].seed);
+}
+
+/* 감쇠는 반경에서 정확히 0 이 되는 유한 커널을 쓴다.
+   1/d^2 은 꼬리가 길어 광원 하나가 지도 전체를 밝혀 버린다 */
+function att(d2,R){ var s = 1 - d2/(R*R); return s>0 ? s*s : 0; }
+
+/* 모닥불 그림자 — 광원이 점이고 나무가 수직 기둥이므로
+   불에서 표본점까지의 선분이 기둥에 걸리는지만 보면 된다 */
+function blockers(L){
+  var out=[];
+  for(var i=0;i<OBJ.length;i++){
+    var o=OBJ[i], rad=KIND[o.k].rad;
+    if(!rad) continue;
+    var d=Math.hypot(o.x-L.x,o.y-L.y);
+    if(d < L.r) out.push({x:o.x,y:o.y,r2:rad*rad,d:d});
+  }
+  out.sort(function(a,b){return a.d-b.d;});   // 가까운 것이 더 자주 가린다
+  return out.slice(0,28);                     // 비용 상한
+}
+function shadowed(L,wx,wy){
+  var bl=L.blk; if(!bl) return false;
+  var dx=wx-L.x, dy=wy-L.y, dd=dx*dx+dy*dy;
+  if(dd<0.04) return false;
+  for(var i=0;i<bl.length;i++){
+    var o=bl[i], fx=o.x-L.x, fy=o.y-L.y;
+    var t=(fx*dx+fy*dy)/dd;
+    if(t<=0.03||t>=1) continue;                        // 광원 뒤이거나 표본점 너머
+    var ox=L.x+dx*t-o.x, oy=L.y+dy*t-o.y;
+    if(ox*ox+oy*oy < o.r2) return true;
+  }
+  return false;
+}
+
+/* 밝기와, 그중 불빛이 차지하는 비율을 함께 돌려준다 */
+var _warm=0;                     // 직전 lightAt 의 불빛 비율. 반환 배열을 만들지 않으려는 것
+function lightAt(wx,wy,px,py){
+  var total=AMBIENT, warm=0;
+  var dx=wx-px, dy=wy-py;
+  var q=TORCH.i*TORCH.f*att(dx*dx+dy*dy, TORCH.r);
+  total+=q; warm+=q;
+  for(var i=0;i<LIGHTS.length;i++){
+    var L=LIGHTS[i]; if(!L.on) continue;
+    var ex=wx-L.x, ey=wy-L.y, e2=ex*ex+ey*ey;
+    if(e2 >= L.r*L.r) continue;                        // 반경 밖은 정확히 0
+    var v=L.i*L.f*att(e2, L.r);
+    /* 눈에 안 보일 만큼 약한 빛에는 그림자를 계산하지 않는다 */
+    if(v >= 0.03 && shadows && shadowed(L,wx,wy)) continue;
+    total+=v; warm+=v;
+  }
+  _warm = warm/total;
+  return total;
+}
+
+var LSTEP=[0.52,0.27,0.13,0.055];
+function lvlOf(b){ return b>LSTEP[0]?0 : b>LSTEP[1]?1 : b>LSTEP[2]?2 : b>LSTEP[3]?3 : 4; }
+for(var _li=0;_li<LIGHTS.length;_li++) LIGHTS[_li].blk = blockers(LIGHTS[_li]);
 
 /* 겹쳐 있으면 빼낸다. 반지름을 키운 직후처럼 이미 박혀 있는 경우의 복구용 */
 function unstick(x,y){
@@ -222,44 +312,53 @@ var GROUND={ F:[",.,..","..,."," .. "," "," "], D:[";,;..",",.,."," . "," "," "]
              C:["*..-.",".-. "," . "," "," "], ".":[".. "," . "," "," "," "] };
 
 function render(px,py,hd){
+  tickLights();
   var buf=[],z=[],lv=[],r,c;
   for(r=0;r<H;r++){buf.push(new Array(W).fill(" "));z.push(new Array(W).fill(Infinity));lv.push(new Array(W).fill(4));}
   var hz=Math.floor(H*0.44);
-  var lvl=function(d){return Math.min(4,Math.floor(d/VIEW*5));};
+  /* 열마다 방향이 고정이므로 삼각함수는 행을 돌기 전에 한 번만 구한다.
+     행마다 부르면 프레임당 6천 번이 넘는다 */
+  var ca=new Array(W), sa=new Array(W);
+  for(c=0;c<W;c++){ var ang=hd+(c/W-0.5)*FOV; ca[c]=Math.cos(ang); sa[c]=Math.sin(ang); }
 
-  /* 바닥 — 행이 거리를, 열이 방향을 정한다. 지형을 실제로 표본한다 */
+  /* 바닥 — 행이 거리를, 열이 방향을 정한다. 밝기는 그 지점의 빛이 정한다 */
   for(var row=hz+1;row<H;row++){
-    var dist=(VIEW*0.85)/(row-hz); if(dist>VIEW) continue;
-    var L=lvl(dist);
+    var dist=(GSPAN*0.85)/(row-hz); if(dist>VIEW) continue;
     for(var col=0;col<W;col++){
-      var a=hd+(col/W-0.5)*FOV, wx=px+Math.cos(a)*dist, wy=py+Math.sin(a)*dist;
+      var wx=px+ca[col]*dist, wy=py+sa[col]*dist;
       var t=tileAt(wx,wy); if(t===null) continue;
+      var L=lvlOf(lightAt(wx,wy,px,py));
+      if(L>=4) continue;                       // 빛이 닿지 않으면 어둠 그대로 둔다
       var g=GROUND[t]||GROUND.F, v=g[Math.min(g.length-1,L)];
       buf[row][col]=v[(hash(Math.floor(wx*3),Math.floor(wy*3))>>>11)%v.length];
-      lv[row][col]=L;
+      lv[row][col]= _warm>0.55 ? L+20 : L;     // 20+ = 불빛이 지배
     }
   }
 
   /* 오브젝트 — 먼 것부터 그려 가까운 것이 덮는다 (화가 알고리즘 + z버퍼) */
   var vis=[],i;
   for(i=0;i<OBJ.length;i++){var o=OBJ[i],d=Math.hypot(o.x-px,o.y-py);
+    if(o.k==="fire" && !LIGHTS[0].on) continue;
     if(d>0.35&&d<VIEW) vis.push({x:o.x,y:o.y,k:o.k,d:d});}
   vis.sort(function(A,B){return B.d-A.d;});
 
-  function put(col,row,ch,d,L,art){ if(col<0||col>=W||row<0||row>=H) return;
-    if(d<z[row][col]){buf[row][col]=ch;z[row][col]=d;lv[row][col]=art?L+10:L;} }
+  function put(col,row,ch,d,cls){ if(col<0||col>=W||row<0||row>=H) return;
+    if(d<z[row][col]){buf[row][col]=ch;z[row][col]=d;lv[row][col]=cls;} }
 
   /* 행마다 폭이 달라지는 스프라이트 — 형태로 종류를 구별시킨다 */
-  function sprite(cx,spec,d,L){
+  function sprite(cx,spec,d,L,cls){
     var h=(H*spec.h)/d, half=Math.max(1,Math.round(h/spec.wr))>>1;
     var top=Math.round(hz-h*spec.top), bot=Math.round(hz+h*spec.bot);
     var span=Math.max(1,bot-top), ch=spec.ramp[L];
     for(var rr=top;rr<=bot;rr++){
+      /* 불꽃은 행마다·프레임마다 글자가 흔들린다 */
+      if(spec.flame) ch=spec.ramp[Math.max(0,Math.min(4,
+        L + (((flick(9.1)*97 + rr*13) | 0) % 2)))];
       var f=(rr-top)/span, k=1;
       if(spec.shape==="tent") k=0.25+0.75*f;          // 위가 좁은 삼각
       else if(spec.shape==="dome") k=Math.sqrt(Math.max(0,f)); // 아래가 넓은 둔덕
       var hw=Math.max(0,Math.round(half*k));
-      for(var cc2=cx-hw;cc2<=cx+hw;cc2++) put(cc2,rr,ch,d,L,spec.art);
+      for(var cc2=cx-hw;cc2<=cx+hw;cc2++) put(cc2,rr,ch,d,cls);
     }
   }
 
@@ -267,16 +366,20 @@ function render(px,py,hd){
     var ob=vis[j], rel=Math.atan2(ob.y-py,ob.x-px)-hd;
     while(rel>Math.PI) rel-=2*Math.PI; while(rel<-Math.PI) rel+=2*Math.PI;
     if(Math.abs(rel)>FOV*0.72) continue;
-    var cx=Math.round((rel/FOV+0.5)*W), L2=lvl(ob.d), spec=KIND[ob.k], cc3, rr2;
+    var spec=KIND[ob.k];
+    var L2=lvlOf(lightAt(ob.x,ob.y,px,py));
+    if(L2>=4) continue;                        // 빛이 안 닿으면 아예 안 보인다
+    var cls2 = spec.flame ? L2+20 : spec.art ? L2+10 : (_warm>0.55 ? L2+20 : L2);
+    var cx=Math.round((rel/FOV+0.5)*W), cc3, rr2;
 
     if(ob.k==="tree"){
       var h=(H*spec.h)/ob.d;
       var cW=Math.max(1,Math.round(h/spec.cwr)), tW=Math.max(1,Math.round(h/spec.twr));
       var top=Math.round(hz-h*spec.top), mid=Math.round(hz-h*spec.mid), bot=Math.round(hz+h*spec.bot);
-      for(cc3=cx-(cW>>1);cc3<=cx+(cW>>1);cc3++) for(rr2=top;rr2<mid;rr2++) put(cc3,rr2,spec.canopy[L2],ob.d,L2);
-      for(cc3=cx-(tW>>1);cc3<=cx+(tW>>1);cc3++) for(rr2=mid;rr2<=bot;rr2++) put(cc3,rr2,spec.trunk[L2],ob.d,L2);
+      for(cc3=cx-(cW>>1);cc3<=cx+(cW>>1);cc3++) for(rr2=top;rr2<mid;rr2++) put(cc3,rr2,spec.canopy[L2],ob.d,cls2);
+      for(cc3=cx-(tW>>1);cc3<=cx+(tW>>1);cc3++) for(rr2=mid;rr2<=bot;rr2++) put(cc3,rr2,spec.trunk[L2],ob.d,cls2);
     } else {
-      sprite(cx,spec,ob.d,L2);
+      sprite(cx,spec,ob.d,L2,cls2);
     }
   }
 
@@ -284,7 +387,8 @@ function render(px,py,hd){
   var esc={"&":"&amp;","<":"&lt;",">":"&gt;"}, html="";
   /* 10 이상은 인공물 — 같은 깊이라도 다른 색 계열을 쓴다 */
   var wrap=function(v,run){
-    return "<span class="+(v>=10?("a"+(v-10)):("d"+v))+">"+run+"</span>"; };
+    var cls = v>=20 ? ("f"+(v-20)) : v>=10 ? ("a"+(v-10)) : ("d"+v);
+    return "<span class="+cls+">"+run+"</span>"; };
   for(r=0;r<H;r++){
     var run="", cur=lv[r][0];
     for(c=0;c<W;c++){
@@ -301,18 +405,24 @@ var view=document.getElementById("view"), probe=document.getElementById("probe")
 function fit(){
   var iw=window.innerWidth, ih=window.innerHeight;
   var fs = iw<400?9 : iw<620?10.5 : iw<900?12 : iw<1400?13 : 14;
-  view.style.fontSize=fs+"px"; probe.style.fontSize=fs+"px";
-  probe.textContent=new Array(101).join("M");
-  var cw=probe.getBoundingClientRect().width/100;
   var avail=Math.min(1680,iw-24)-20;                 // 패딩·보더 제외
-  var maxW=Math.floor(avail/cw);
-  var maxH=Math.floor((ih*0.58)/fs);                  // 조작부가 화면 밖으로 밀리지 않게
-  /* 문자 종횡비(약 0.6) 보정 후 화면 비율이 맞으려면 W ≈ 3H.
-     이 비를 깨면 나무가 납작해진다 — 폭·높이 중 좁은 쪽에 맞춘다 */
-  if(maxW/3 <= maxH){ W=maxW; H=Math.round(W/3); }
-  else { H=maxH; W=H*3; }
-  W=Math.max(34,Math.min(220,W));
-  H=Math.max(13,Math.min(64,H));
+  /* 렌더 비용은 칸 수에 비례한다. 열 수가 상한을 넘으면 글자를 키워
+     다시 계산한다 — 더 많은 칸보다 더 큰 칸. 상한 안이면 손대지 않는다 */
+  for(var pass=0; pass<3; pass++){
+    view.style.fontSize=fs+"px"; probe.style.fontSize=fs+"px";
+    probe.textContent=new Array(101).join("M");
+    var cw=probe.getBoundingClientRect().width/100;
+    var maxW=Math.floor(avail/cw);
+    var maxH=Math.floor((ih*0.58)/fs);               // 조작부가 화면 밖으로 밀리지 않게
+    /* 문자 종횡비(약 0.6) 보정 후 화면 비율이 맞으려면 W ≈ 3H.
+       이 비가 깨지면 나무가 납작해진다 — 폭·높이 중 좁은 쪽에 맞춘다 */
+    if(maxW/3 <= maxH){ W=maxW; H=Math.round(W/3); }
+    else { H=maxH; W=H*3; }
+    if(W <= MAXW) break;
+    fs = fs*W/MAXW;
+  }
+  W=Math.max(34,Math.min(MAXW,W));
+  H=Math.max(13,Math.min(MAXH,H));
   document.getElementById("grid").textContent=W+"×"+H;
 }
 fit();
@@ -400,13 +510,20 @@ bCol.addEventListener("click",function(){
 /* 가시거리 = 불빛. 불이 약해질수록 세계가 좁아진다 — 이 실험의 핵심 변수 */
 var vslide=document.getElementById("vslide");
 vslide.addEventListener("input",function(){
-  VIEW=+vslide.value; document.getElementById("vnum").textContent=VIEW;
+  TORCH.r=+vslide.value; document.getElementById("vnum").textContent=TORCH.r;
 });
+var bFire=document.getElementById("bFire");
+bFire.addEventListener("click",function(){
+  LIGHTS[0].on=!LIGHTS[0].on; bFire.textContent=LIGHTS[0].on?"모닥불 켜짐":"모닥불 꺼짐"; });
+var bSh=document.getElementById("bShadow");
+bSh.addEventListener("click",function(){
+  shadows=!shadows; bSh.textContent=shadows?"그림자 켜짐":"그림자 꺼짐"; });
 
 /* ── 루프 ────────────────────────────────────────────────── */
 var last=0;
 function loop(ts){
   var dt=Math.min(0.05,(ts-(last||ts))/1000); last=ts;
+  tSec+=dt;                                    // 불의 명멸에 쓰인다
   if(grid){
     var k=1-Math.pow(0.001,dt);                // 지수 보간 — 격자 이동에 무게를 준다
     var gx=px+(tx-px)*k, gy=py+(ty-py)*k;
@@ -436,6 +553,8 @@ function loop(ts){
   document.getElementById("dir").textContent=grid?DIRN[face]:DIRN[((Math.round(hd/(Math.PI/2))%4)+4)%4];
   document.getElementById("steps").textContent=steps;
   document.getElementById("col").textContent=collide?"켜짐":"꺼짐";
+  var lu=lightAt(px,py,px,py);
+  document.getElementById("lum").textContent=lu.toFixed(2)+" · 단계 "+lvlOf(lu);
 
   var mini="";
   if(showMap){
