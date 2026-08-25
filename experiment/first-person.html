@@ -107,7 +107,7 @@ function tileAt(wx,wy){var c=Math.floor(wx/CELL),r=Math.floor(wy/CELL);
    h=높이계수(거리로 나눔) wr=폭비(높이/wr) top·bot=지평선 기준 위아래 비율 */
 var KIND={
   tree: { canopy:["█","▓","▒","░","·"], trunk:["║","║","│","│","·"],
-          h:3.4, cwr:3.0, twr:8,  top:0.80, mid:0.26, bot:0.05 },
+          h:3.4, cwr:3.0, twr:5.5,top:0.80, mid:0.26, bot:0.05 },
   rock: { ramp:["█","▓","▒","░","·"], h:1.0, wr:1.5, top:0.30, bot:0.14, shape:"box" },
   tent: { ramp:["#","=","=","-","-"], h:1.7, wr:0.85, top:0.58, bot:0.10, shape:"tent", art:1 },
   pit:  { ramp:["*","*","+",".","."], h:0.55,wr:0.45, top:0.02, bot:0.18, shape:"dome", art:1 },
@@ -127,11 +127,11 @@ var KIND={
 var WR_K = 2*Math.tan(FOV/2)/3;
 function worldRad(h,wr){ return WR_K*h/wr/2; }
 
-KIND.tree.rad = worldRad(KIND.tree.h, KIND.tree.twr)*1.25;  // 수관이 아니라 기둥 기준
-KIND.rock.rad = worldRad(KIND.rock.h, KIND.rock.wr)*1.15;
-KIND.tent.rad = worldRad(KIND.tent.h, KIND.tent.wr)*1.10;
-KIND.post.rad = worldRad(KIND.post.h, KIND.post.wr)*1.50;
-KIND.mast.rad = worldRad(KIND.mast.h, KIND.mast.wr)*1.50;
+KIND.tree.rad = worldRad(KIND.tree.h, KIND.tree.twr)*2.00;  // 수관이 아니라 기둥 기준
+KIND.rock.rad = worldRad(KIND.rock.h, KIND.rock.wr)*1.60;
+KIND.tent.rad = worldRad(KIND.tent.h, KIND.tent.wr)*1.25;
+KIND.post.rad = worldRad(KIND.post.h, KIND.post.wr)*2.50;
+KIND.mast.rad = worldRad(KIND.mast.h, KIND.mast.wr)*2.50;
 KIND.pit.rad  = 0;                                          // 밟고 지나간다
 
 /* 씨앗 고정 — 나무 배치가 매번 같아야 지도가 지도로 기능한다.
@@ -172,24 +172,48 @@ var OBJ=(function(){
 
 var CAMP={x:44.0, y:28.4};
 
-/* 막는 게 아니라 밀어낸다 — 겹친 만큼 법선 방향으로 빼낸다.
-   그래서 벽에 부딪히면 멈추지 않고 표면을 따라 미끄러진다.
-   두 번 돌려 두 물체 사이 모서리를 푼다. 오브젝트가 285개뿐이라
-   공간 분할 없이 전수 검사해도 프레임당 비용이 무시할 만하다. */
-function resolve(nx,ny){
-  for(var pass=0;pass<2;pass++){
-    for(var i=0;i<OBJ.length;i++){
-      var o=OBJ[i], rad=KIND[o.k].rad;
-      if(!rad) continue;
-      var dx=nx-o.x; if(dx>3||dx<-3) continue;       // 최대 반지름 2.0+0.55 보다 넉넉히
-      var dy=ny-o.y; if(dy>3||dy<-3) continue;
-      var min=rad+PLAYER_R, d2=dx*dx+dy*dy;
-      if(d2<min*min && d2>1e-8){
-        var d=Math.sqrt(d2), push=(min-d)/d; nx+=dx*push; ny+=dy*push;
-      }
+/* 겹쳐 있으면 빼낸다. 반지름을 키운 직후처럼 이미 박혀 있는 경우의 복구용 */
+function unstick(x,y){
+  for(var i=0;i<OBJ.length;i++){
+    var o=OBJ[i], rad=KIND[o.k].rad;
+    if(!rad) continue;
+    var dx=x-o.x; if(dx>4||dx<-4) continue;
+    var dy=y-o.y; if(dy>4||dy<-4) continue;
+    var min=rad+PLAYER_R, d2=dx*dx+dy*dy;
+    if(d2<min*min){
+      var d=Math.sqrt(d2);
+      if(d<1e-6){ x=o.x+min; y=o.y; }
+      else { var k=(min-d)/d; x+=dx*k; y+=dy*k; }
     }
   }
-  return [nx,ny];
+  return [x,y];
+}
+
+/* 스윕 충돌 — 이동 선분과 원의 교차를 직접 푼다.
+   최종 위치만 검사하면 한 프레임(최대 0.35유닛)에 나무를 통째로 건너뛰어
+   반대편에서 밀려난다. "나무를 지나고 나서 멈추는" 느낌의 원인이 이것이다.
+
+   접촉 직전에서 멈춘다. 미끄러지지 않는다 — 부딪히면 서야 벽으로 읽힌다. */
+function resolve(px,py,nx,ny){
+  var st=unstick(px,py); px=st[0]; py=st[1];
+  var dx=nx-px, dy=ny-py, dd=dx*dx+dy*dy;
+  if(dd<1e-12) return [px,py];
+  var best=1;
+  for(var i=0;i<OBJ.length;i++){
+    var o=OBJ[i], rad=KIND[o.k].rad;
+    if(!rad) continue;
+    var fx=px-o.x; if(fx>5||fx<-5) continue;
+    var fy=py-o.y; if(fy>5||fy<-5) continue;
+    var r=rad+PLAYER_R;
+    var b=2*(fx*dx+fy*dy), c=fx*fx+fy*fy-r*r;
+    var disc=b*b-4*dd*c;
+    if(disc<0) continue;                       // 선분이 원을 비껴간다
+    var t=(-b-Math.sqrt(disc))/(2*dd);         // 들어가는 쪽 근
+    if(t>=0 && t<best) best=t;
+  }
+  if(best>=1) return [nx,ny];
+  var stop=Math.max(0, best-0.002);            // 접촉 직전
+  return [px+dx*stop, py+dy*stop];
 }
 
 /* 반복 횟수가 가중치. 대부분 같은 글자, 드물게 다른 글자 → 노이즈가 아니라 질감 */
@@ -389,7 +413,7 @@ function loop(ts){
     /* 격자 이동은 칸 중심을 잇는 통로를 지나고 그 통로는 미리 비워져 있으므로
        이 호출은 대개 아무 일도 하지 않는다. 스칠 때만 카메라를 밀어낸다 —
        목적지 도달을 막지는 않는다 */
-    if(collide){ var gp=resolve(gx,gy); gx=gp[0]; gy=gp[1]; }
+    if(collide){ var gp=resolve(px,py,gx,gy); gx=gp[0]; gy=gp[1]; }
     px=gx; py=gy;
     var diff=((thd-hd+Math.PI*3)%(Math.PI*2))-Math.PI; hd+=diff*k;
   } else {
@@ -397,7 +421,7 @@ function loop(ts){
     hd+=tn*2.4*dt;
     var nx=px+(Math.cos(hd)*mv+Math.cos(hd+Math.PI/2)*st)*7*dt;
     var ny=py+(Math.sin(hd)*mv+Math.sin(hd+Math.PI/2)*st)*7*dt;
-    if(collide){ var pos=resolve(nx,ny); nx=pos[0]; ny=pos[1]; }
+    if(collide){ var pos=resolve(px,py,nx,ny); nx=pos[0]; ny=pos[1]; }
     px=Math.max(0.6,Math.min(7*CELL-0.6,nx));
     py=Math.max(0.6,Math.min(7*CELL-0.6,ny));
     thd=hd; tx=px; ty=py;
