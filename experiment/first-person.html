@@ -98,6 +98,14 @@ var CELL=8, FOV=Math.PI/3, VIEW=20;
 var PLAYER_R=0.18, collide=true;   // 사람 몸 굵기. 이 값이 크면 멀찍이 멈춘다
 var W=140, H=46;                                  // 화면 크기에 맞춰 재계산된다
 
+var TAU=Math.PI*2;
+/* 최단 회전각. JS 의 % 는 음수 피연산자에 음수를 돌려주므로
+   ((a-b+3PI) % 2PI) - PI 식은 hd 가 3PI 를 넘는 순간 부호가 뒤집힌다.
+   한쪽으로 여덟 번 돌면 실제로 그렇게 되어 90도 대신 270도 역회전했다.
+   floor 로 정규화하면 크기와 무관하게 옳다. */
+function angDiff(a,b){ var d=a-b; return d - TAU*Math.floor((d+Math.PI)/TAU); }
+function wrapAng(a){ a%=TAU; return a<0 ? a+TAU : a; }
+
 function hash(a,b){var h=(a*374761393+b*668265263)>>>0;h=(h^(h>>13))*1274126177>>>0;return (h^(h>>16))>>>0;}
 function tileAt(wx,wy){var c=Math.floor(wx/CELL),r=Math.floor(wy/CELL);
   return (r<0||r>6||c<0||c>6)?null:MAP[r][c];}
@@ -415,10 +423,10 @@ function loop(ts){
        목적지 도달을 막지는 않는다 */
     if(collide){ var gp=resolve(px,py,gx,gy); gx=gp[0]; gy=gp[1]; }
     px=gx; py=gy;
-    var diff=((thd-hd+Math.PI*3)%(Math.PI*2))-Math.PI; hd+=diff*k;
+    hd = wrapAng(hd + angDiff(thd,hd)*k);
   } else {
     var mv=(held.w?1:0)-(held.s?1:0), tn=(held.d?1:0)-(held.a?1:0), st=(held.e?1:0)-(held.q?1:0);
-    hd+=tn*2.4*dt;
+    hd=wrapAng(hd+tn*2.4*dt);
     var nx=px+(Math.cos(hd)*mv+Math.cos(hd+Math.PI/2)*st)*7*dt;
     var ny=py+(Math.sin(hd)*mv+Math.sin(hd+Math.PI/2)*st)*7*dt;
     if(collide){ var pos=resolve(px,py,nx,ny); nx=pos[0]; ny=pos[1]; }

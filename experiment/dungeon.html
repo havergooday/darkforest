@@ -136,6 +136,14 @@ for(var _k in FEAT) NAME[_k]=FEAT[_k].n;
 var FOV=Math.PI/3, VIEW=14, WALLH=1.55;
 var W=132, H=44, MAXW=150, MAXH=50;
 
+var TAU=Math.PI*2;
+/* 최단 회전각. JS 의 % 는 음수 피연산자에 음수를 돌려주므로
+   ((a-b+3PI) % 2PI) - PI 식은 hd 가 3PI 를 넘는 순간 부호가 뒤집힌다.
+   한쪽으로 여덟 번 돌면 실제로 그렇게 되어 90도 대신 270도 역회전했다.
+   floor 로 정규화하면 크기와 무관하게 옳다. */
+function angDiff(a,b){ var d=a-b; return d - TAU*Math.floor((d+Math.PI)/TAU); }
+function wrapAng(a){ a%=TAU; return a<0 ? a+TAU : a; }
+
 function at(r,c){ return (r<0||r>=N||c<0||c>=N) ? "#" : MAP[r][c]; }
 function solid(ch){ return ch==="#" || ch==="+"; }          // 문은 시야를 막되 지나갈 수 있다
 function walk(ch){ return ch!=="#"; }
@@ -394,7 +402,7 @@ function loop(ts){
   var dt=Math.min(0.05,(ts-(last||ts))/1000); last=ts;
   var k=1-Math.pow(0.0005,dt);                      // 지수 보간 — 칸 이동에 무게를 준다
   px+=(tx-px)*k; py+=(ty-py)*k;
-  var diff=((thd-hd+Math.PI*3)%(Math.PI*2))-Math.PI; hd+=diff*k;
+  hd = wrapAng(hd + angDiff(thd,hd)*k);
 
   /* 문 개폐 — 인접한 칸에 서면 열린다 */
   var dk=1-Math.pow(0.004,dt);
