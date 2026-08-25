@@ -1,0 +1,372 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>성 지하 · 던전 실험</title>
+<style>
+:root{--bg:#0a0b0d;--dim:#7b8794;--faint:#3d4854;--frost:#6ea8d4;--ember:#e0813c;--line:#262f39}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:#cdd6de;-webkit-text-size-adjust:100%}
+body{font-family:ui-monospace,SFMono-Regular,Consolas,"D2Coding",monospace;padding:14px 12px 28px}
+.wrap{max-width:1680px;margin:0 auto}
+h1{font-size:11px;font-weight:400;letter-spacing:.28em;color:var(--dim);margin:0 0 4px;text-transform:uppercase}
+.sub{font-size:11.5px;color:var(--faint);margin:0 0 10px;line-height:1.6}
+.sub a{color:var(--dim)}
+#view{margin:0;line-height:1.0;white-space:pre;background:#050607;border:1px solid #1b232c;
+      padding:9px;border-radius:3px;overflow:hidden;font-family:inherit}
+#probe{position:absolute;visibility:hidden;white-space:pre;left:-9999px;top:0;font-family:inherit}
+.d0{color:#c9d3dc}.d1{color:#8b97a3}.d2{color:#5b6672}.d3{color:#39424c}.d4{color:#222932}
+.a0{color:#f0dcb4}.a1{color:#c8a877}.a2{color:#957c53}.a3{color:#5f5036}.a4{color:#3a3122}
+.hud{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--dim);margin:9px 0}
+.hud b{font-weight:400;color:var(--faint)}
+.hud .on{color:var(--ember)}
+.cols{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start;margin-top:6px}
+#map{font-size:12px;line-height:1.15;color:var(--faint);white-space:pre;margin:0;letter-spacing:1px}
+#map .me{color:var(--frost)}
+#map .fea{color:var(--ember)}
+#log{flex:1;min-width:260px;font-size:12.5px;line-height:2;color:var(--dim);
+     border-left:1px solid var(--line);padding-left:16px;min-height:96px}
+#log div:last-child{color:#dbe4ec}
+.ctl{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start;margin-top:14px}
+.pad{display:grid;grid-template-columns:repeat(3,64px);gap:6px}
+.pad button{all:unset;text-align:center;padding:11px 0;border:1px solid var(--line);border-radius:3px;
+            font:inherit;font-size:13px;color:var(--dim);cursor:pointer;touch-action:manipulation;
+            -webkit-user-select:none;user-select:none}
+.pad button:active{background:#161d25;color:#dbe4ec;border-color:var(--frost)}
+.pad .wide{grid-column:span 3}
+.side{display:flex;flex-direction:column;gap:7px}
+.row{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.row button{all:unset;padding:7px 11px;border:1px solid var(--line);border-radius:3px;
+            font:inherit;font-size:11.5px;color:var(--dim);cursor:pointer;touch-action:manipulation}
+.row button:active{background:#161d25;color:#dbe4ec}
+.row label{font-size:11.5px;color:var(--dim);white-space:nowrap}
+input[type=range]{accent-color:var(--ember);width:180px}
+.keys{font-size:11px;color:var(--faint);line-height:1.9;margin-top:12px}
+.keys kbd{color:var(--dim);border:1px solid var(--line);border-radius:2px;padding:0 4px;font:inherit}
+@media (max-width:620px){ .keys{display:none} .pad{grid-template-columns:repeat(3,1fr);width:100%} }
+</style></head><body><div class="wrap">
+<h1>성 지하 · 던전 실험</h1>
+<p class="sub">위저드리식 격자 던전. 한 칸 전진이 1턴, 회전이 1턴. 24×24 미로를 손으로 그렸다.
+숲 실험은 <a href="first-person.html">여기</a>.<br>
+벽이 있으므로 <b style="color:var(--dim);font-weight:400">모퉁이 너머가 진짜로 가려진다</b> —
+빌보드 스프라이트가 아니라 DDA 레이캐스팅이다. 충돌은 벽 검사 한 줄로 끝난다.</p>
+<span id="probe"></span>
+<pre id="view"></pre>
+<div class="hud">
+  <span><b>칸</b> <span id="cell"></span></span>
+  <span><b>방위</b> <span id="dir" class="on"></span></span>
+  <span><b>턴</b> <span id="turns">0</span></span>
+  <span><b>밟은 칸</b> <span id="seen"></span></span>
+  <span><b>격자</b> <span id="grid"></span></span>
+</div>
+<div class="cols">
+  <div id="map"></div>
+  <div id="log"></div>
+</div>
+<div class="ctl">
+  <div class="pad">
+    <button data-k="a">◀ 좌향</button>
+    <button data-k="w">▲ 전진</button>
+    <button data-k="d">우향 ▶</button>
+    <button data-k="s" class="wide">▼ 후진</button>
+  </div>
+  <div class="side">
+    <div class="row">
+      <button id="bMap">지도 켜짐</button>
+      <button id="bAll">전체 공개</button>
+      <button id="bReset">입구로</button>
+    </div>
+    <div class="row">
+      <label>시야 <span id="vnum">14</span></label>
+      <input id="vslide" type="range" min="3" max="26" step="1" value="14">
+    </div>
+  </div>
+</div>
+<div class="keys">
+  <kbd>W</kbd><kbd>S</kbd> 전진·후진 · <kbd>A</kbd><kbd>D</kbd> 좌향·우향 · <kbd>M</kbd> 지도
+</div>
+</div>
+<script>
+/* 위저드리식 격자 던전.
+   숲에서는 벽이 없어 빌보드 스프라이트를 썼지만 던전은 벽 기반이므로
+   DDA 레이캐스팅이 쓰인다. 더 간단하고, 무엇보다 모퉁이가 진짜로 가린다. */
+
+/* 24×24 성 지하. 아홉 개 방을 복도로 잇되 몇 군데를 막아 미로로 만들었다.
+   G-H 와 H-I 가 막혀 있어 입구에서 계단까지 크게 돌아가야 한다.
+   연결성은 만들 때 확인했다 — 통행 가능 232칸 전부 도달, 최단 24칸. */
+var MAP=[
+  "########################",
+  "#.#.#.###.....###...####",
+  "#.#.#.###.#o#.###...####",
+  "#......+.......+......##",
+  "#.#.#.###.#.#.###..o..##",
+  "#.#.#.###.....###.....##",
+  "###.#######.############",
+  "###+#######+############",
+  "###.#######.############",
+  "#.....###.....###.....##",
+  "#.....###.....###.#.#.##",
+  "#......+.......+......##",
+  "#.~...###.....###.#.#.##",
+  "#.....###.....###.....##",
+  "###.#######.#######.####",
+  "###+#######+#######+####",
+  "###.#######.#######.####",
+  "#.....###.....###.....##",
+  "#.....###.....###.....##",
+  "#..!..###..<..###..>..##",
+  "#.....###.....###.....##",
+  "#.....###.....###.....##",
+  "########################",
+  "########################"
+];
+var N=MAP.length;
+
+/* 특징 타일 — 바닥이되 눈에 띄는 것. 스프라이트로 세워 그린다 */
+var FEAT={
+  "<":{n:"올라가는 계단", ramp:["=","=","-","-","·"], h:0.55, w:0.62, lift:0.10},
+  ">":{n:"내려가는 계단", ramp:["=","=","-","-","·"], h:0.40, w:0.62, lift:-0.06},
+  "!":{n:"비문",         ramp:["I","!",":",".","·"], h:0.95, w:0.10, lift:0.28},
+  "o":{n:"잔해",         ramp:["O","o",".",".","·"], h:0.30, w:0.34, lift:-0.02},
+  "~":{n:"우물",         ramp:["U","u",".",".","·"], h:0.34, w:0.50, lift:-0.05}
+};
+var NAME={"#":"벽","+":"문",".":"바닥"};
+for(var _k in FEAT) NAME[_k]=FEAT[_k].n;
+
+var FOV=Math.PI/3, VIEW=14, WALLH=1.55;
+var W=132, H=44, MAXW=150, MAXH=50;
+
+function at(r,c){ return (r<0||r>=N||c<0||c>=N) ? "#" : MAP[r][c]; }
+function solid(ch){ return ch==="#" || ch==="+"; }          // 문은 시야를 막되 지나갈 수 있다
+function walk(ch){ return ch!=="#"; }
+function hash(a,b){var h=(a*374761393+b*668265263)>>>0;h=(h^(h>>13))*1274126177>>>0;return (h^(h>>16))>>>0;}
+
+/* 벽면은 남북/동서를 다른 밝기로 칠한다 — 방향광처럼 읽혀 모서리가 살아난다 */
+var WALL_NS=["█","▓","▒","░","·"], WALL_EW=["▓","▒","░","·"," "];
+var DOOR   =["#","=","+","-","·"];
+var FLOOR  =["·.,",".. "," . "," "," "], CEIL=["'. ",". "," "," "," "];
+
+function render(px,py,hd){
+  var buf=[],z=[],lv=[],dep=[],r,c;
+  for(r=0;r<H;r++){ buf.push(new Array(W).fill(" ")); z.push(new Array(W).fill(Infinity));
+                    lv.push(new Array(W).fill(4)); }
+  for(c=0;c<W;c++) dep.push(Infinity);
+  var hz=Math.floor(H*0.50);
+  var lvl=function(d){ return Math.min(4, Math.floor(d/VIEW*5)); };
+
+  /* 바닥·천장 — 행이 거리를 정하고 열이 방향을 정한다 */
+  var ca=new Array(W), sa=new Array(W), cf=new Array(W);
+  for(c=0;c<W;c++){
+    var ang=hd+(c/W-0.5)*FOV;
+    ca[c]=Math.cos(ang); sa[c]=Math.sin(ang); cf[c]=Math.cos(ang-hd);   // 어안 보정
+  }
+  for(var row=hz+1;row<H;row++){
+    var d=(H*WALLH*0.5)/(row-hz); if(d>VIEW) continue;
+    var L=lvl(d), Lc=Math.min(4,L+1);
+    for(c=0;c<W;c++){
+      var wx=px+ca[c]*d, wy=py+sa[c]*d;
+      if(!walk(at(wy|0, wx|0))) continue;
+      var f=FLOOR[L], g=CEIL[Lc];
+      var hh=(hash(Math.floor(wx*3),Math.floor(wy*3))>>>11);
+      buf[row][c]=f[hh%f.length]; lv[row][c]=L;
+      var mir=hz-(row-hz);
+      if(mir>=0){ buf[mir][c]=g[hh%g.length]; lv[mir][c]=Lc; }
+    }
+  }
+
+  /* 벽 — DDA. 격자를 한 칸씩 건너며 처음 만나는 벽까지 간다 */
+  for(c=0;c<W;c++){
+    var rdx=ca[c], rdy=sa[c];
+    var mx=px|0, my=py|0;
+    var ddx=rdx===0?1e30:Math.abs(1/rdx), ddy=rdy===0?1e30:Math.abs(1/rdy);
+    var sx,sy,sdx,sdy;
+    if(rdx<0){ sx=-1; sdx=(px-mx)*ddx; } else { sx=1; sdx=(mx+1-px)*ddx; }
+    if(rdy<0){ sy=-1; sdy=(py-my)*ddy; } else { sy=1; sdy=(my+1-py)*ddy; }
+    var side=0, hitCh="#", steps=0;
+    while(steps++<64){
+      if(sdx<sdy){ sdx+=ddx; mx+=sx; side=0; } else { sdy+=ddy; my+=sy; side=1; }
+      hitCh=at(my,mx);
+      if(solid(hitCh)) break;
+    }
+    var dist=(side===0 ? (sdx-ddx) : (sdy-ddy));
+    var perp=dist*cf[c];
+    if(perp<0.02) perp=0.02;
+    dep[c]=perp;
+    if(perp>VIEW) continue;
+    var L2=lvl(perp);
+    var h=(H*WALLH)/perp;
+    var top=Math.round(hz-h*0.5), bot=Math.round(hz+h*0.5);
+    var ch, cls;
+    if(hitCh==="+"){ ch=DOOR[L2]; cls=L2+10; }
+    else { ch=(side===0?WALL_NS:WALL_EW)[L2]; cls=L2; }
+    for(r=Math.max(0,top); r<=Math.min(H-1,bot); r++){
+      buf[r][c]=ch; lv[r][c]=cls; z[r][c]=perp;
+    }
+  }
+
+  /* 특징 타일 — 벽 뒤에 있으면 가려진다 (열별 벽 거리로 z 판정) */
+  var sp=[];
+  for(r=0;r<N;r++) for(c=0;c<N;c++){
+    var t=MAP[r][c]; if(!FEAT[t]) continue;
+    var ox=c+0.5, oy=r+0.5, dx=ox-px, dy=oy-py;
+    var dd=Math.sqrt(dx*dx+dy*dy); if(dd>VIEW||dd<0.15) continue;
+    sp.push({t:t,d:dd,dx:dx,dy:dy});
+  }
+  sp.sort(function(a,b){return b.d-a.d;});
+  for(var i=0;i<sp.length;i++){
+    var o=sp[i], rel=Math.atan2(o.dy,o.dx)-hd;
+    while(rel>Math.PI) rel-=2*Math.PI; while(rel<-Math.PI) rel+=2*Math.PI;
+    if(Math.abs(rel)>FOV*0.72) continue;
+    var F=FEAT[o.t], L3=lvl(o.d);
+    var perp2=o.d*Math.cos(rel);
+    var cx=Math.round((rel/FOV+0.5)*W);
+    var hh2=(H*WALLH*F.h)/perp2, wpx=Math.max(1,Math.round((H*WALLH*F.w)/perp2/2.2));
+    var base=hz+Math.round((H*WALLH*0.5)/perp2) - Math.round(hh2*F.lift);
+    var t0=Math.round(base-hh2), t1=base;
+    for(var cc=cx-(wpx>>1); cc<=cx+(wpx>>1); cc++){
+      if(cc<0||cc>=W) continue;
+      if(perp2>=dep[cc]) continue;                 // 벽에 가려짐
+      for(var rr=Math.max(0,t0); rr<=Math.min(H-1,t1); rr++){
+        if(perp2<z[rr][cc]){ buf[rr][cc]=F.ramp[L3]; z[rr][cc]=perp2; lv[rr][cc]=L3+10; }
+      }
+    }
+  }
+
+  var esc={"&":"&amp;","<":"&lt;",">":"&gt;"}, html="";
+  var wrap=function(v,run){ return "<span class="+(v>=10?("a"+(v-10)):("d"+v))+">"+run+"</span>"; };
+  for(r=0;r<H;r++){
+    var run="", cur=lv[r][0];
+    for(c=0;c<W;c++){
+      if(lv[r][c]!==cur){ html+=wrap(cur,run); run=""; cur=lv[r][c]; }
+      var ch2=buf[r][c]; run+= esc[ch2]||ch2;
+    }
+    html+=wrap(cur,run)+(r<H-1?"\n":"");
+  }
+  return html;
+}
+
+/* ── 화면 크기 ─────────────────────────────────────────────── */
+var view=document.getElementById("view"), probe=document.getElementById("probe");
+function fit(){
+  var iw=window.innerWidth, ih=window.innerHeight;
+  var fs = iw<400?9 : iw<620?10.5 : iw<900?12 : iw<1400?13 : 14;
+  var avail=Math.min(1680,iw-24)-20;
+  for(var pass=0; pass<3; pass++){
+    view.style.fontSize=fs+"px"; probe.style.fontSize=fs+"px";
+    probe.textContent=new Array(101).join("M");
+    var cw=probe.getBoundingClientRect().width/100;
+    var maxW=Math.floor(avail/cw), maxH=Math.floor((ih*0.56)/fs);
+    if(maxW/3 <= maxH){ W=maxW; H=Math.round(W/3); }
+    else { H=maxH; W=H*3; }
+    if(W<=MAXW) break;
+    fs=fs*W/MAXW;
+  }
+  W=Math.max(34,Math.min(MAXW,W));
+  H=Math.max(13,Math.min(MAXH,H));
+  document.getElementById("grid").textContent=W+"×"+H;
+}
+fit();
+window.addEventListener("resize",fit);
+window.addEventListener("orientationchange",fit);
+
+/* ── 상태 · 이동 ─────────────────────────────────────────────
+   위저드리 방식. 한 칸 전진이 1턴, 90도 회전이 1턴.
+   벽 검사 한 줄이 곧 충돌 판정이다 — 원-원 반지름을 맞출 일이 없다. */
+var START={r:19,c:11};
+var cr=START.r, cc=START.c, face=0;                 // 0동 1남 2서 3북
+var px=cc+0.5, py=cr+0.5, hd=0, tx=px, ty=py, thd=0;
+var DIR=[[0,1],[1,0],[0,-1],[-1,0]], DIRN=["동","남","서","북"];
+var ARROW=["▶","▼","◀","▲"];
+var visited={}, turns=0, showMap=true, revealAll=false, logs=[];
+
+function say(t){ logs.push(t); if(logs.length>5) logs.shift();
+  document.getElementById("log").innerHTML=logs.map(function(l){return "<div>› "+l+"</div>";}).join(""); }
+
+function mark(){
+  var k=cr+","+cc;
+  if(!visited[k]){
+    visited[k]=1;
+    var t=MAP[cr][cc];
+    if(FEAT[t]) say(FEAT[t].n + "이(가) 있다.");
+  }
+  /* 밟은 칸 둘레도 지도에 남는다 — 방 안에 서면 방의 윤곽이 보인다 */
+  for(var dr=-1;dr<=1;dr++) for(var dc=-1;dc<=1;dc++){
+    var rr=cr+dr, ccx=cc+dc;
+    if(rr>=0&&rr<N&&ccx>=0&&ccx<N) visited[rr+","+ccx]=visited[rr+","+ccx]||2;
+  }
+}
+
+function step(sign){
+  var d=DIR[face], nr=cr+d[0]*sign, nc=cc+d[1]*sign;
+  if(!walk(at(nr,nc))){ say("벽이다."); return; }
+  cr=nr; cc=nc; tx=cc+0.5; ty=cr+0.5; turns++;
+  if(MAP[cr][cc]==="+") say("문을 지난다.");
+  mark();
+}
+function turn(s){ face=(face+s+4)%4; thd=face*Math.PI/2; turns++; }
+function reset(){
+  cr=START.r; cc=START.c; face=0;
+  px=tx=cc+0.5; py=ty=cr+0.5; hd=thd=0;
+  turns=0; visited={}; logs=[]; revealAll=false;
+  document.getElementById("bAll").textContent="전체 공개";
+  say("성의 지하다. 등 뒤로 올라가는 계단이 있다.");
+  say("어딘가에 더 내려가는 길이 있을 것이다.");
+  mark();
+}
+
+var KMAP={arrowup:"w",arrowdown:"s",arrowleft:"a",arrowright:"d"};
+function act(k){
+  if(k==="w") step(1); else if(k==="s") step(-1);
+  else if(k==="a") turn(-1); else if(k==="d") turn(1);
+}
+document.addEventListener("keydown",function(e){
+  var k=e.key.toLowerCase();
+  if(k==="m"){ showMap=!showMap; return; }
+  if(KMAP[k]){ e.preventDefault(); k=KMAP[k]; }
+  if("wsad".indexOf(k)>=0){ e.preventDefault(); act(k); }
+});
+Array.prototype.forEach.call(document.querySelectorAll(".pad button"),function(b){
+  b.addEventListener("pointerdown",function(e){ e.preventDefault(); act(b.getAttribute("data-k")); });
+});
+document.getElementById("bMap").addEventListener("click",function(){
+  showMap=!showMap; this.textContent=showMap?"지도 켜짐":"지도 꺼짐"; });
+document.getElementById("bAll").addEventListener("click",function(){
+  revealAll=!revealAll; this.textContent=revealAll?"밟은 곳만":"전체 공개"; });
+document.getElementById("bReset").addEventListener("click",reset);
+var vslide=document.getElementById("vslide");
+vslide.addEventListener("input",function(){
+  VIEW=+vslide.value; document.getElementById("vnum").textContent=VIEW; });
+
+/* ── 루프 ────────────────────────────────────────────────── */
+var last=0;
+function loop(ts){
+  var dt=Math.min(0.05,(ts-(last||ts))/1000); last=ts;
+  var k=1-Math.pow(0.0005,dt);                      // 지수 보간 — 칸 이동에 무게를 준다
+  px+=(tx-px)*k; py+=(ty-py)*k;
+  var diff=((thd-hd+Math.PI*3)%(Math.PI*2))-Math.PI; hd+=diff*k;
+
+  view.innerHTML=render(px,py,hd);
+  document.getElementById("cell").textContent=cr+","+cc+" ("+(NAME[MAP[cr][cc]]||"바닥")+")";
+  document.getElementById("dir").textContent=DIRN[face];
+  document.getElementById("turns").textContent=turns;
+  var walked=0; for(var key in visited) if(visited[key]===1) walked++;
+  document.getElementById("seen").textContent=walked;
+
+  var m="";
+  if(showMap){
+    var ICON={"#":"█","+":"+",".":"·"};
+    for(var r=0;r<N;r++){
+      for(var c=0;c<N;c++){
+        if(r===cr&&c===cc){ m+='<span class=me>'+ARROW[face]+'</span>'; continue; }
+        if(!revealAll && !visited[r+","+c]){ m+=" "; continue; }
+        var t=MAP[r][c];
+        if(FEAT[t]) m+='<span class=fea>'+t+'</span>';
+        else m+=ICON[t]||"·";
+      }
+      m+="\n";
+    }
+  }
+  document.getElementById("map").innerHTML=m;
+  requestAnimationFrame(loop);
+}
+reset();
+requestAnimationFrame(loop);
+</script></body></html>
