@@ -121,12 +121,14 @@ var MAP=[
 var N=MAP.length;
 
 /* 특징 타일 — 바닥이되 눈에 띄는 것. 스프라이트로 세워 그린다 */
+/* 램프가 일찍 점으로 바래면 바닥과 구별되지 않는다.
+   탐험 게임에서 계단을 멀리서 못 알아보는 것은 치명적이므로 형태를 오래 붙든다 */
 var FEAT={
-  "<":{n:"올라가는 계단", ramp:["=","=","-","-","·"], h:0.55, w:0.62, lift:0.10},
-  ">":{n:"내려가는 계단", ramp:["=","=","-","-","·"], h:0.40, w:0.62, lift:-0.06},
-  "!":{n:"비문",         ramp:["I","!",":",".","·"], h:0.95, w:0.10, lift:0.28},
-  "o":{n:"잔해",         ramp:["O","o",".",".","·"], h:0.30, w:0.34, lift:-0.02},
-  "~":{n:"우물",         ramp:["U","u",".",".","·"], h:0.34, w:0.50, lift:-0.05}
+  "<":{n:"올라가는 계단", ramp:["=","=","=","-","·"], h:0.55, w:0.62, lift:0.10},
+  ">":{n:"내려가는 계단", ramp:["=","=","=","-","·"], h:0.40, w:0.62, lift:-0.06},
+  "!":{n:"비문",         ramp:["I","I","!","!",":"], h:0.95, w:0.10, lift:0.28},
+  "o":{n:"잔해",         ramp:["O","O","o","o","·"], h:0.30, w:0.34, lift:-0.02},
+  "~":{n:"우물",         ramp:["U","U","u","u","·"], h:0.34, w:0.50, lift:-0.05}
 };
 var NAME={"#":"벽","+":"문",".":"바닥"};
 for(var _k in FEAT) NAME[_k]=FEAT[_k].n;
@@ -139,18 +141,25 @@ function solid(ch){ return ch==="#" || ch==="+"; }          // 문은 시야를 
 function walk(ch){ return ch!=="#"; }
 function hash(a,b){var h=(a*374761393+b*668265263)>>>0;h=(h^(h>>13))*1274126177>>>0;return (h^(h>>16))>>>0;}
 
-/* 벽면은 남북/동서를 다른 밝기로 칠한다 — 방향광처럼 읽혀 면이 갈린다.
-   면(STONE) · 줄눈(MORT) · 모서리 이음매(SEAM) 세 단계로 결을 만든다 */
+/* 문은 다가가면 열린다. 0=닫힘 1=활짝.
+   열리면 시야를 막지 않으므로 그제야 너머가 보인다 — 문이 의미를 갖는 지점이다 */
+var DOORS=[], DT={};
+(function(){
+  for(var r=0;r<N;r++) for(var c=0;c<N;c++)
+    if(MAP[r][c]==="+"){ DOORS.push({r:r,c:c,k:r*64+c}); DT[r*64+c]=0; }
+})();
+function doorT(r,c){ var v=DT[r*64+c]; return v===undefined?0:v; }
+
+/* 벽면은 민무늬다. 돌 무늬를 넣어 봤더니 화면이 어지러워서 걷어냈다.
+   형태를 읽히게 하는 건 결이 아니라 면을 가르는 선이다 —
+   남북/동서의 밝기 차이, 모서리 이음매, 바닥·천장과 만나는 실루엣. */
 var STONE_NS=["█","▓","▒","░","·"], STONE_EW=["▓","▒","░","·"," "];
-var MORT_NS =["▓","▒","░","·"," "], MORT_EW =["▒","░","·"," "," "];
 var SEAM_NS =["▒","░","·"," "," "], SEAM_EW =["░","·"," "," "," "];
+var EDGE_NS=["█","█","▓","▒","·"], EDGE_EW=["▓","▓","▒","░","·"];
 var DOORF   =["█","▓","▒","░","·"];      // 문짝
-var PLANK   =["║","│","│","·"," "];      // 판자 이음매
-var HANDLE  =["●","o","·","·"," "];
-var COURSES=5, BRICKS=3;                 // 한 칸 벽에 들어가는 돌 층수 / 가로 개수
-var FLOOR  =["·.,",".. "," . "," "," "], CEIL=["  .","   "," "," "," "];
-var EDGE_NS=["█","█","▓","▒","·"], EDGE_EW=["▓","▓","▒","░","·"];  // 벽 아래·위 실루엣
-var FJOINT =["-",".",".","·"," "];       // 바닥 이음매
+var FLOOR  =[".",".","·"," "," "];       // 바닥은 한 글자. 잡티를 없앤다
+var FJOINT =["-","-",".","·"," "];       // 칸 경계선 — 격자가 보여야 지도가 읽힌다
+var DOOR_L=0.14, DOOR_R=0.86, LINTEL=0.13;
 
 function render(px,py,hd){
   var buf=[],z=[],lv=[],dep=[],r,c;
@@ -166,29 +175,26 @@ function render(px,py,hd){
     var ang=hd+(c/W-0.5)*FOV;
     ca[c]=Math.cos(ang); sa[c]=Math.sin(ang); cf[c]=Math.cos(ang-hd);   // 어안 보정
   }
+  /* 바닥만 그린다. 천장은 비워 둔다 — 잔점이 흩어지면 화면이 지저분해진다.
+     칸 경계선만 그어 격자가 눈에 보이게 한다 */
   for(var row=hz+1;row<H;row++){
     var d=(H*WALLH*0.5)/(row-hz); if(d>VIEW) continue;
-    var L=lvl(d), Lc=Math.min(4,L+1);
+    var L=lvl(d);
+    var e=Math.min(0.11, 0.06*d/6+0.012);      // 멀수록 선이 뭉치므로 가늘게
     for(c=0;c<W;c++){
       var wx=px+ca[c]*d, wy=py+sa[c]*d;
       if(!walk(at(wy|0, wx|0))) continue;
-      var f=FLOOR[L], g=CEIL[Lc];
-      var hh=(hash(Math.floor(wx*3),Math.floor(wy*3))>>>11);
-      /* 칸 경계에 이음매를 그어 바닥이 격자로 읽히게 한다.
-         멀수록 선이 뭉치므로 폭을 거리에 반비례시킨다 */
-      var e=Math.min(0.13, 0.07*d/6+0.015);
       var fx=wx-Math.floor(wx), fy=wy-Math.floor(wy);
-      var joint=(fx<e||fx>1-e||fy<e||fy>1-e);
-      buf[row][c]= joint ? FJOINT[L] : f[hh%f.length];
+      buf[row][c]= (fx<e||fx>1-e||fy<e||fy>1-e) ? FJOINT[L] : FLOOR[L];
       lv[row][c]=L;
-      var mir=hz-(row-hz);
-      if(mir>=0){ buf[mir][c]=g[hh%g.length]; lv[mir][c]=Lc; }
     }
   }
 
   /* 벽 — DDA. 격자를 한 칸씩 건너며 처음 만나는 벽까지 간다.
-     열별 결과를 먼저 모은다 — 이웃 열과 비교해야 모서리를 그을 수 있다 */
-  var wP=new Array(W), wS=new Array(W), wC=new Array(W), wU=new Array(W), wK=new Array(W);
+     열린 문은 광선이 지나간다 — 그래서 문 너머는 문이 열려야 보인다.
+     열별 결과를 먼저 모은다. 이웃 열과 비교해야 모서리를 그을 수 있다 */
+  var wP=new Array(W), wS=new Array(W), wC=new Array(W), wU=new Array(W),
+      wK=new Array(W), dP=new Array(W);
   for(c=0;c<W;c++){
     var rdx=ca[c], rdy=sa[c];
     var mx=px|0, my=py|0;
@@ -196,18 +202,26 @@ function render(px,py,hd){
     var sx,sy,sdx,sdy;
     if(rdx<0){ sx=-1; sdx=(px-mx)*ddx; } else { sx=1; sdx=(mx+1-px)*ddx; }
     if(rdy<0){ sy=-1; sdy=(py-my)*ddy; } else { sy=1; sdy=(my+1-py)*ddy; }
-    var side=0, hitCh="#", steps=0;
+    var side=0, hitCh="#", steps=0, doorD=-1;
     while(steps++<64){
       if(sdx<sdy){ sdx+=ddx; mx+=sx; side=0; } else { sdy+=ddy; my+=sy; side=1; }
       hitCh=at(my,mx);
-      if(solid(hitCh)) break;
+      if(hitCh==="#") break;
+      if(hitCh==="+"){
+        var d0=(side===0?(sdx-ddx):(sdy-ddy));
+        var h0=(side===0)?(py+rdy*d0):(px+rdx*d0);
+        var u0=h0-Math.floor(h0);
+        /* 문짝은 한쪽으로 밀려 들어간다. 열린 틈이면 광선이 통과한다 */
+        var gap=DOOR_L+(DOOR_R-DOOR_L)*(1-doorT(my,mx));
+        if(u0>gap && u0<DOOR_R){ if(doorD<0) doorD=d0*cf[c]; continue; }
+        break;
+      }
     }
     var dist=(side===0 ? (sdx-ddx) : (sdy-ddy));
-    /* 벽면 위 어디를 맞았는가 — 돌 무늬와 문의 위치를 여기서 잡는다 */
     var hx = (side===0) ? (py+rdy*dist) : (px+rdx*dist);
     wU[c]=hx-Math.floor(hx);
     var perp=dist*cf[c]; if(perp<0.02) perp=0.02;
-    wP[c]=perp; wS[c]=side; wC[c]=hitCh; wK[c]=my*64+mx;
+    wP[c]=perp; wS[c]=side; wC[c]=hitCh; wK[c]=my*64+mx; dP[c]=doorD;
     dep[c]=perp;
   }
 
@@ -217,52 +231,27 @@ function render(px,py,hd){
     var h=(H*WALLH)/perp;
     var top0=hz-h*0.5, bot0=hz+h*0.5;
     var top=Math.round(top0), bot=Math.round(bot0);
-    /* 이웃 열과 면이 다르면 모서리다. 어두운 이음매로 갈라 놓아야
-       두 벽이 한 덩어리로 뭉쳐 보이지 않는다 */
+    /* 이웃 열과 면이 다르면 모서리다. 여기를 어둡게 갈라 놓는 것이
+       형태 인지에 가장 크게 기여한다 — 무늬가 아니라 선이 형태를 만든다 */
     var edge = (c>0   && (wK[c]!==wK[c-1] || wS[c]!==wS[c-1]))
             || (c<W-1 && (wK[c]!==wK[c+1] || wS[c]!==wS[c+1]));
-    var detail = h>7;                        // 멀면 결이 잡티가 된다
-    /* 벽면을 얼마나 정면으로 보고 있는가. 비스듬할수록 한 열이 벽면을
-       넓게 훑어 세로 줄눈이 지글거린다 — 그때는 가로 층만 남긴다 */
-    var facing = Math.abs(side===0 ? ca[c] : sa[c]);
-    var vjoint = facing > 0.38;
-    var stone = side===0?STONE_NS:STONE_EW, mort = side===0?MORT_NS:MORT_EW;
+    var stone = side===0?STONE_NS:STONE_EW;
     var seam  = side===0?SEAM_NS:SEAM_EW, edg = side===0?EDGE_NS:EDGE_EW;
     for(r=Math.max(0,top); r<=Math.min(H-1,bot); r++){
       var v=(r-top0)/h, ch, cls=L2;
-      if(edge){ ch=seam[L2]; }
-      else if(isDoor){
-        var du=(u-0.13)/0.74, dv=(v-0.10)/0.86;
-        var inD = du>0 && du<1 && dv>0 && dv<1;
-        if(inD && dv<0.24){                  // 위쪽은 아치 — 모서리를 깎는다
-          var k2=(0.24-dv)/0.24;
-          if(du < k2*0.42 || du > 1-k2*0.42) inD=false;
-        }
-        if(!inD){ ch=stone[L2]; }            // 문틀은 돌
-        else {
-          cls=L2+10;
-          var pl=(du*4)%1;
-          if(detail && (pl<0.14 || Math.abs(dv-0.50)<0.05)) ch=PLANK[L2];
-          else ch=DOORF[L2];
-          if(detail && du>0.76 && du<0.92 && Math.abs(dv-0.56)<0.06){
-            ch=HANDLE[L2]; cls=Math.max(0,L2-1)+10;
-          }
-        }
-      }
-      else if(detail){
-        var vy=v*COURSES; vy-=Math.floor(vy);
-        var j = vy<0.17;                       // 가로 층 — 각도와 무관하게 안전하다
-        if(!j && vjoint){
-          var course=Math.floor(v*COURSES);
-          var bx=(u+((course&1)?0.5:0))*BRICKS; bx-=Math.floor(bx);
-          j = bx<0.12;
-        }
-        ch = j ? mort[L2] : stone[L2];
-      }
+      if(edge) ch=seam[L2];
+      else if(isDoor && u>DOOR_L && u<DOOR_R && v>LINTEL){ ch=DOORF[L2]; cls=L2+10; }
       else ch=stone[L2];
-      /* 벽이 바닥·천장과 만나는 줄을 밝게 — 실루엣이 서야 형태가 읽힌다 */
-      if(!isDoor && (r===top||r===bot) && bot>top) ch=edg[L2];
+      if(!edge && (r===top||r===bot) && bot>top) ch=edg[L2];   // 바닥·천장과 만나는 실루엣
       buf[r][c]=ch; lv[r][c]=cls; z[r][c]=perp;
+    }
+    /* 열린 문을 통과한 열에는 인방을 얹는다 — 문틀이 남아야 통로로 읽힌다 */
+    if(dP[c]>0){
+      var Ld=lvl(dP[c]), hd2=(H*WALLH)/dP[c], t0=hz-hd2*0.5;
+      var lb=Math.round(t0+hd2*LINTEL);
+      for(r=Math.max(0,Math.round(t0)); r<=Math.min(H-1,lb); r++){
+        if(dP[c]<z[r][c]){ buf[r][c]=STONE_NS[Ld]; lv[r][c]=Ld; z[r][c]=dP[c]; }
+      }
     }
   }
 
@@ -362,7 +351,7 @@ function step(sign){
   var d=DIR[face], nr=cr+d[0]*sign, nc=cc+d[1]*sign;
   if(!walk(at(nr,nc))){ say("벽이다."); return; }
   cr=nr; cc=nc; tx=cc+0.5; ty=cr+0.5; turns++;
-  if(MAP[cr][cc]==="+") say("문을 지난다.");
+  if(MAP[cr][cc]==="+") say("문간에 선다.");
   mark();
 }
 function turn(s){ face=(face+s+4)%4; thd=face*Math.PI/2; turns++; }
@@ -406,6 +395,16 @@ function loop(ts){
   var k=1-Math.pow(0.0005,dt);                      // 지수 보간 — 칸 이동에 무게를 준다
   px+=(tx-px)*k; py+=(ty-py)*k;
   var diff=((thd-hd+Math.PI*3)%(Math.PI*2))-Math.PI; hd+=diff*k;
+
+  /* 문 개폐 — 인접한 칸에 서면 열린다 */
+  var dk=1-Math.pow(0.004,dt);
+  for(var di=0;di<DOORS.length;di++){
+    var D=DOORS[di];
+    var want=(Math.abs(D.r-cr)+Math.abs(D.c-cc)<=1)?1:0;
+    if(want && !D.said){ D.said=1; say("문이 열린다."); }
+    if(!want) D.said=0;
+    DT[D.k]+=(want-DT[D.k])*dk;
+  }
 
   view.innerHTML=render(px,py,hd);
   document.getElementById("cell").textContent=cr+","+cc+" ("+(NAME[MAP[cr][cc]]||"바닥")+")";
