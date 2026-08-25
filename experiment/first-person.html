@@ -93,7 +93,7 @@ input[type=range]{accent-color:var(--ember);width:190px}
 var MAP=["DDFRRDD","DFFRWDD","FFWWFFD","RFF.FCD","RRFFFFD","DFWWFDD","DDDRDDD"];
 var NAME={".":"빈터","F":"숲","W":"냇가","R":"바위","C":"야영지","D":"깊은 숲"};
 var CELL=8, FOV=Math.PI/3, VIEW=20;
-var PLAYER_R=0.55, collide=true;
+var PLAYER_R=0.18, collide=true;   // 사람 몸 굵기. 이 값이 크면 멀찍이 멈춘다
 var W=140, H=46;                                  // 화면 크기에 맞춰 재계산된다
 
 function hash(a,b){var h=(a*374761393+b*668265263)>>>0;h=(h^(h>>13))*1274126177>>>0;return (h^(h>>16))>>>0;}
@@ -105,22 +105,39 @@ function tileAt(wx,wy){var c=Math.floor(wx/CELL),r=Math.floor(wy/CELL);
    h=높이계수(거리로 나눔) wr=폭비(높이/wr) top·bot=지평선 기준 위아래 비율 */
 var KIND={
   tree: { canopy:["█","▓","▒","░","·"], trunk:["║","║","│","│","·"],
-          h:3.4, cwr:4.5, twr:16, top:0.80, mid:0.26, bot:0.05, rad:0.75 },
-  rock: { ramp:["█","▓","▒","░","·"], h:1.0, wr:1.8, top:0.30, bot:0.14, shape:"box", rad:1.5 },
-  tent: { ramp:["#","=","=","-","-"], h:1.7, wr:0.85, top:0.58, bot:0.10, shape:"tent", art:1, rad:2.0 },
-  pit:  { ramp:["*","*","+",".","."], h:0.55,wr:0.45, top:0.02, bot:0.18, shape:"dome", art:1, rad:0   },   // 불자리는 밟고 지나간다
-  post: { ramp:["|","|","!",":","."], h:2.6, wr:11,   top:0.88, bot:0.05, shape:"box", art:1, rad:0.4 },
+          h:3.4, cwr:3.0, twr:8,  top:0.80, mid:0.26, bot:0.05 },
+  rock: { ramp:["█","▓","▒","░","·"], h:1.0, wr:1.5, top:0.30, bot:0.14, shape:"box" },
+  tent: { ramp:["#","=","=","-","-"], h:1.7, wr:0.85, top:0.58, bot:0.10, shape:"tent", art:1 },
+  pit:  { ramp:["*","*","+",".","."], h:0.55,wr:0.45, top:0.02, bot:0.18, shape:"dome", art:1 },
+  post: { ramp:["|","|","!",":","."], h:2.6, wr:11,   top:0.88, bot:0.05, shape:"box", art:1 },
   /* 나무(h 3.4)보다 높다. 같은 거리에서 수관 위로 솟으므로 멀리서 먼저 읽힌다.
      숲에서 사람의 자리를 알아보는 실제 방식이 이것이다 */
-  mast: { ramp:["|","|","|","!",":"], h:4.6, wr:15,   top:0.93, bot:0.04, shape:"box", art:1, rad:0.5 }
+  mast: { ramp:["|","|","|","!",":"], h:4.6, wr:15,   top:0.93, bot:0.04, shape:"box", art:1 }
 };
+
+/* 스프라이트가 실제로 차지하는 월드 반지름을 렌더 기하에서 되돌려 구한다.
+   폭(열) = (H*h/d)/wr, 한 열이 덮는 월드 폭 = 2*d*tan(FOV/2)/W 이므로
+   월드 지름 = 2*H*h*tan(FOV/2)/(wr*W). 화면 비를 W ≈ 3H 로 고정해 두었으므로
+   W 가 소거되어 상수가 된다.
+
+   충돌 반지름을 손으로 정하면 반드시 어긋난다 — 실제로 보이는 것의 5~18배로
+   벌어져 있었다. 여기서 유도하면 어긋날 수 없다. */
+var WR_K = 2*Math.tan(FOV/2)/3;
+function worldRad(h,wr){ return WR_K*h/wr/2; }
+
+KIND.tree.rad = worldRad(KIND.tree.h, KIND.tree.twr)*1.25;  // 수관이 아니라 기둥 기준
+KIND.rock.rad = worldRad(KIND.rock.h, KIND.rock.wr)*1.15;
+KIND.tent.rad = worldRad(KIND.tent.h, KIND.tent.wr)*1.10;
+KIND.post.rad = worldRad(KIND.post.h, KIND.post.wr)*1.50;
+KIND.mast.rad = worldRad(KIND.mast.h, KIND.mast.wr)*1.50;
+KIND.pit.rad  = 0;                                          // 밟고 지나간다
 
 /* 씨앗 고정 — 나무 배치가 매번 같아야 지도가 지도로 기능한다.
    야영지(C)에는 나무를 두지 않는다. 빽빽한 숲 사이의 빈 자리가
    멀리서 먼저 읽히고, 그게 "저기 뭔가 있다"의 정체가 된다. */
 /* 칸 중심을 지나는 십자 통로의 반폭은 종류마다 다르다.
    반지름 + 플레이어 반지름 만큼은 비켜나야 격자 이동이 막히지 않는다 */
-function band(k){ return (KIND[k].rad + PLAYER_R)/CELL + 0.03; }
+function band(k){ return Math.max(0.10, (KIND[k].rad + PLAYER_R)/CELL + 0.03); }
 
 var OBJ=(function(){
   var s=20250824, rnd=function(){s=(s*1664525+1013904223)>>>0;return s/4294967296;};
