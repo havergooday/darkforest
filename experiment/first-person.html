@@ -45,7 +45,8 @@ input[type=range]{accent-color:var(--ember);width:190px}
 </style></head><body><div class="wrap">
 <h1>숲 · 1인칭 실험</h1>
 <p class="sub">본편(<a href="../">../</a>)과 같은 7×7 지도를 1인칭 아스키로 그린 실험. 게임 로직은 없다.
-자연물은 블록 문자(<span style="color:var(--dim)">█▓▒░</span>), 인공물은 아스키(<span style="color:var(--dim)">#=+|</span>) — 멀리서도 구별된다.</p>
+자연물은 블록 문자(<span style="color:var(--dim)">█▓▒░</span>), 인공물은 아스키(<span style="color:var(--dim)">#=+|</span>) — 멀리서도 구별된다.<br>
+충돌은 <b style="color:var(--dim);font-weight:400">자유 이동</b>에서 확실히 체감된다. 격자 턴제는 칸 중심을 잇는 통로가 미리 비워져 있어 부딪힐 일이 거의 없다.</p>
 <span id="probe"></span>
 <pre id="view"></pre>
 <div class="hud">
@@ -55,6 +56,7 @@ input[type=range]{accent-color:var(--ember);width:190px}
   <span><b>방위</b> <span id="dir"></span></span>
   <span><b>걸음</b> <span id="steps">0</span></span>
   <span><b>격자</b> <span id="grid"></span></span>
+  <span><b>충돌</b> <span id="col" class="on"></span></span>
 </div>
 <div class="cols">
   <div id="mini"></div>
@@ -383,7 +385,12 @@ function loop(ts){
   var dt=Math.min(0.05,(ts-(last||ts))/1000); last=ts;
   if(grid){
     var k=1-Math.pow(0.001,dt);                // 지수 보간 — 격자 이동에 무게를 준다
-    px+=(tx-px)*k; py+=(ty-py)*k;
+    var gx=px+(tx-px)*k, gy=py+(ty-py)*k;
+    /* 격자 이동은 칸 중심을 잇는 통로를 지나고 그 통로는 미리 비워져 있으므로
+       이 호출은 대개 아무 일도 하지 않는다. 스칠 때만 카메라를 밀어낸다 —
+       목적지 도달을 막지는 않는다 */
+    if(collide){ var gp=resolve(gx,gy); gx=gp[0]; gy=gp[1]; }
+    px=gx; py=gy;
     var diff=((thd-hd+Math.PI*3)%(Math.PI*2))-Math.PI; hd+=diff*k;
   } else {
     var mv=(held.w?1:0)-(held.s?1:0), tn=(held.d?1:0)-(held.a?1:0), st=(held.e?1:0)-(held.q?1:0);
@@ -404,6 +411,7 @@ function loop(ts){
   document.getElementById("cell").textContent=Math.floor(py/CELL)+","+Math.floor(px/CELL);
   document.getElementById("dir").textContent=grid?DIRN[face]:DIRN[((Math.round(hd/(Math.PI/2))%4)+4)%4];
   document.getElementById("steps").textContent=steps;
+  document.getElementById("col").textContent=collide?"켜짐":"꺼짐";
 
   var mini="";
   if(showMap){
