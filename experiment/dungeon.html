@@ -15,6 +15,8 @@ h1{font-size:11px;font-weight:400;letter-spacing:.28em;color:var(--dim);margin:0
 #probe{position:absolute;visibility:hidden;white-space:pre;left:-9999px;top:0;font-family:inherit}
 .d0{color:#c9d3dc}.d1{color:#8b97a3}.d2{color:#5b6672}.d3{color:#39424c}.d4{color:#222932}
 .a0{color:#f0dcb4}.a1{color:#c8a877}.a2{color:#957c53}.a3{color:#5f5036}.a4{color:#3a3122}
+.m0{color:#e8a89e}.m1{color:#c07f76}.m2{color:#8e5b55}.m3{color:#5c3a36}.m4{color:#38221f}
+.mx{color:#ff7a66}
 .hud{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--dim);margin:9px 0}
 .hud b{font-weight:400;color:var(--faint)}
 .hud .on{color:var(--ember)}
@@ -22,6 +24,7 @@ h1{font-size:11px;font-weight:400;letter-spacing:.28em;color:var(--dim);margin:0
 #map{font-size:12px;line-height:1.15;color:var(--faint);white-space:pre;margin:0;letter-spacing:1px}
 #map .me{color:var(--frost)}
 #map .fea{color:var(--ember)}
+#map .mob{color:#c25b53}
 #log{flex:1;min-width:260px;font-size:12.5px;line-height:2;color:var(--dim);
      border-left:1px solid var(--line);padding-left:16px;min-height:96px}
 #log div:last-child{color:#dbe4ec}
@@ -133,6 +136,36 @@ var FEAT={
 var NAME={"#":"벽","+":"문",".":"바닥"};
 for(var _k in FEAT) NAME[_k]=FEAT[_k].n;
 
+/* 스프라이트 아틀라스 — 글자 행렬을 화면 크기에 맞춰 최근접 표본으로 늘린다.
+   글자에 이미 농담(█▓▒░)이 들어 있고, 거리 단계를 더해 멀수록 흐려진다.
+   손으로 그린 프레임을 여러 장 두는 것도 같은 방식이다 — 여기서는 한 장에
+   흔들림·숨·눈 깜빡임을 절차적으로 얹었다. E 는 눈, 공백은 투명. */
+var MOB_ART=[
+  "   ░▒▒▒░   ",
+  "  ▒█████▒  ",
+  " ▓███████▓ ",
+  " ▓█▒▒▒▒▒█▓ ",
+  " ▓█▒ E ▒█▓ ",
+  " ▓█▒▒▒▒▒█▓ ",
+  " ▒███████▒ ",
+  "  ███████  ",
+  " ▒███████▒ ",
+  "▒█████████▒",
+  "▒█████████▒",
+  " ░███████░ ",
+  "  ▒▒▒▒▒▒▒  ",
+  "  ░░   ░░  "
+];
+var MOB_W=11, MOB_H=14;
+var DENS={"█":0,"▓":1,"▒":2,"░":3,"·":4};
+var MRAMP=["█","▓","▒","░","·"];
+var EYE=["●","●","o","·"," "];
+
+/* 몬스터. 플레이어가 턴을 쓸 때마다 한 칸 다가온다 —
+   전투는 없고 존재만으로 압박을 준다 */
+var MOB={ r:3, c:11, awake:false, said:false };
+var MOB_SIGHT=9;
+
 var FOV=Math.PI/3, VIEW=14, WALLH=1.55;
 var W=132, H=44, MAXW=150, MAXH=50;
 
@@ -157,6 +190,19 @@ var DOORS=[], DT={};
     if(MAP[r][c]==="+"){ DOORS.push({r:r,c:c,k:r*64+c}); DT[r*64+c]=0; }
 })();
 function doorT(r,c){ var v=DT[r*64+c]; return v===undefined?0:v; }
+
+/* 두 칸 사이가 트여 있는가. 닫힌 문도 막는다 */
+function los(r0,c0,r1,c1){
+  var dr=r1-r0, dc=c1-c0, steps=Math.max(Math.abs(dr),Math.abs(dc));
+  if(steps===0) return true;
+  for(var i=1;i<steps;i++){
+    var rr=Math.round(r0+dr*i/steps), ccx=Math.round(c0+dc*i/steps);
+    var t=at(rr,ccx);
+    if(t==="#") return false;
+    if(t==="+" && doorT(rr,ccx)<0.5) return false;
+  }
+  return true;
+}
 
 /* 벽면은 민무늬다. 돌 무늬를 넣어 봤더니 화면이 어지러워서 걷어냈다.
    형태를 읽히게 하는 건 결이 아니라 면을 가르는 선이다 —
@@ -291,8 +337,48 @@ function render(px,py,hd){
     }
   }
 
+  /* 몬스터 — 글자 행렬을 늘려 그린다. 벽에 가려지고, 흔들리고 숨을 쉰다 */
+  if(MOB){
+    var mdx=(MOB.c+0.5)-px, mdy=(MOB.r+0.5)-py;
+    var md=Math.sqrt(mdx*mdx+mdy*mdy);
+    var mrel=Math.atan2(mdy,mdx)-hd;
+    while(mrel>Math.PI) mrel-=TAU; while(mrel<-Math.PI) mrel+=TAU;
+    if(md<VIEW && md>0.2 && Math.abs(mrel)<FOV*0.75 && los(MOB.r,MOB.c,py|0,px|0)){
+      var mperp=md*Math.cos(mrel), ML=lvl(mperp);
+      var sway=Math.sin(tSec*1.7)*0.6;                     // 좌우 흔들림
+      var breath=1+Math.sin(tSec*2.3)*0.02;                // 숨
+      var sh=(H*WALLH*0.80*breath)/mperp, sw=sh*0.62;
+      var mcx=Math.round((mrel/FOV+0.5)*W + sway);
+      var mbase=hz+Math.round((H*WALLH*0.5)/mperp);        // 발이 바닥에 닿게
+      var mtop=Math.round(mbase-sh);
+      var eyeCh=EYE[Math.min(4, ML + ((tSec%4.6)<0.12 ? 3 : 0))];  // 이따금 깜빡
+      for(var sc=0; sc<sw; sc++){
+        var col=Math.round(mcx-sw/2+sc);
+        if(col<0||col>=W) continue;
+        if(mperp>=dep[col]) continue;                      // 벽에 가려짐
+        var ax=Math.floor(sc/sw*MOB_W); if(ax>=MOB_W) ax=MOB_W-1;
+        for(var sr=0; sr<sh; sr++){
+          var row2=mtop+sr; if(row2<0||row2>=H) continue;
+          var ay=Math.floor(sr/sh*MOB_H); if(ay>=MOB_H) ay=MOB_H-1;
+          var ach=MOB_ART[ay].charAt(ax);
+          if(ach===" ") continue;                          // 투명
+          if(mperp>=z[row2][col]) continue;
+          /* 벽과 같은 색 계열이면 실루엣이 돌에 뭉개진다 — 30번대는 몬스터 전용 */
+          if(ach==="E"){ buf[row2][col]=eyeCh; lv[row2][col]=39; }
+          else {
+            var di=DENS[ach]; if(di===undefined) di=2;
+            buf[row2][col]=MRAMP[Math.min(4,di+ML)]; lv[row2][col]=30+ML;
+          }
+          z[row2][col]=mperp;
+        }
+      }
+    }
+  }
+
   var esc={"&":"&amp;","<":"&lt;",">":"&gt;"}, html="";
-  var wrap=function(v,run){ return "<span class="+(v>=10?("a"+(v-10)):("d"+v))+">"+run+"</span>"; };
+  var wrap=function(v,run){
+    var cls = v===39 ? "mx" : v>=30 ? ("m"+(v-30)) : v>=10 ? ("a"+(v-10)) : ("d"+v);
+    return "<span class="+cls+">"+run+"</span>"; };
   for(r=0;r<H;r++){
     var run="", cur=lv[r][0];
     for(c=0;c<W;c++){
@@ -360,13 +446,36 @@ function step(sign){
   if(!walk(at(nr,nc))){ say("벽이다."); return; }
   cr=nr; cc=nc; tx=cc+0.5; ty=cr+0.5; turns++;
   if(MAP[cr][cc]==="+") say("문간에 선다.");
-  mark();
+  mark(); mobTurn();
 }
-function turn(s){ face=(face+s+4)%4; thd=face*Math.PI/2; turns++; }
+function turn(s){ face=(face+s+4)%4; thd=face*Math.PI/2; turns++; mobTurn(); }
+
+/* 플레이어가 턴을 쓸 때마다 한 칸. 축이 큰 쪽으로 먼저, 막히면 다른 축으로 */
+function mobTurn(){
+  if(!MOB) return;
+  var d=Math.abs(MOB.r-cr)+Math.abs(MOB.c-cc);
+  var see=los(MOB.r,MOB.c,cr,cc);
+  if(!MOB.awake){
+    if(see && d<=MOB_SIGHT){ MOB.awake=true; say("어둠 속에서 무언가 일어선다."); }
+    return;
+  }
+  if(!see && d>MOB_SIGHT+3){ MOB.awake=false; say("발소리가 멀어진다."); return; }
+  if(d<=1){ if(!MOB.said){ MOB.said=true; say("바로 앞이다. 숨소리가 들린다."); } return; }
+  MOB.said=false;
+  var dr=cr-MOB.r, dc=cc-MOB.c;
+  var tries = Math.abs(dr)>=Math.abs(dc)
+    ? [[Math.sign(dr),0],[0,Math.sign(dc)]]
+    : [[0,Math.sign(dc)],[Math.sign(dr),0]];
+  for(var i=0;i<tries.length;i++){
+    var nr=MOB.r+tries[i][0], nc=MOB.c+tries[i][1];
+    if((tries[i][0]||tries[i][1]) && walk(at(nr,nc))){ MOB.r=nr; MOB.c=nc; return; }
+  }
+}
 function reset(){
   cr=START.r; cc=START.c; face=0;
   px=tx=cc+0.5; py=ty=cr+0.5; hd=thd=0;
   turns=0; visited={}; logs=[]; revealAll=false;
+  MOB.r=3; MOB.c=11; MOB.awake=false; MOB.said=false;
   document.getElementById("bAll").textContent="전체 공개";
   say("성의 지하다. 등 뒤로 올라가는 계단이 있다.");
   say("어딘가에 더 내려가는 길이 있을 것이다.");
@@ -397,9 +506,10 @@ vslide.addEventListener("input",function(){
   VIEW=+vslide.value; document.getElementById("vnum").textContent=VIEW; });
 
 /* ── 루프 ────────────────────────────────────────────────── */
-var last=0;
+var last=0, tSec=0;
 function loop(ts){
   var dt=Math.min(0.05,(ts-(last||ts))/1000); last=ts;
+  tSec+=dt;                                        // 흔들림·숨·깜빡임에 쓰인다
   var k=1-Math.pow(0.0005,dt);                      // 지수 보간 — 칸 이동에 무게를 준다
   px+=(tx-px)*k; py+=(ty-py)*k;
   hd = wrapAng(hd + angDiff(thd,hd)*k);
@@ -427,6 +537,8 @@ function loop(ts){
     for(var r=0;r<N;r++){
       for(var c=0;c<N;c++){
         if(r===cr&&c===cc){ m+='<span class=me>'+ARROW[face]+'</span>'; continue; }
+        if(MOB && MOB.awake && r===MOB.r && c===MOB.c && visited[r+","+c]){
+          m+='<span class=mob>M</span>'; continue; }
         if(!revealAll && !visited[r+","+c]){ m+=" "; continue; }
         var t=MAP[r][c];
         if(FEAT[t]) m+='<span class=fea>'+t+'</span>';

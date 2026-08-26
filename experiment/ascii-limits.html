@@ -1,0 +1,359 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>아스키의 한계 · 실험</title>
+<style>
+:root{--bg:#0a0b0d;--dim:#7b8794;--faint:#3d4854;--frost:#6ea8d4;--ember:#e0813c;--line:#262f39}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:#cdd6de}
+body{font-family:ui-monospace,SFMono-Regular,Consolas,"D2Coding",monospace;padding:16px 12px 40px}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-size:11px;font-weight:400;letter-spacing:.28em;color:var(--dim);margin:0 0 6px;text-transform:uppercase}
+.lead{font-size:12px;color:var(--faint);line-height:1.7;margin:0 0 20px}
+.lead a{color:var(--dim)}
+section{margin:0 0 26px;border-top:1px solid var(--line);padding-top:14px}
+h2{font-size:12px;font-weight:400;color:var(--ember);margin:0 0 4px;letter-spacing:.06em}
+.note{font-size:11.5px;color:var(--faint);line-height:1.7;margin:0 0 10px}
+.note b{color:var(--dim);font-weight:400}
+pre{margin:0;line-height:1.0;white-space:pre;background:#050607;border:1px solid #1b232c;
+    padding:8px;border-radius:3px;overflow-x:auto}
+.pair{display:flex;gap:14px;flex-wrap:wrap}
+.pair>div{flex:1;min-width:280px}
+.cap{font-size:11px;color:var(--faint);margin:4px 0 0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:9px}
+.row button{all:unset;padding:6px 10px;border:1px solid var(--line);border-radius:3px;
+            font:inherit;font-size:11.5px;color:var(--dim);cursor:pointer}
+.row button:active{background:#161d25;color:#dbe4ec}
+table{border-collapse:collapse;font-size:11.5px;margin-top:8px}
+td,th{border:1px solid var(--line);padding:4px 9px;text-align:left;font-weight:400}
+th{color:var(--dim)}
+td{color:var(--faint)}
+td.n{color:#cdd6de}
+</style></head><body><div class="wrap">
+<h1>아스키의 한계</h1>
+<p class="lead">브라우저에서 문자만으로 어디까지 그릴 수 있는가. 던전 실험은
+<a href="dungeon.html">여기</a>, 숲은 <a href="first-person.html">여기</a>.<br>
+핵심은 <b style="color:var(--dim);font-weight:400">한 칸이 한 픽셀이 아니라는 것</b> —
+글자는 칸 안에 모양을 담고, 색까지 따로 줄 수 있다.</p>
+
+<section>
+  <h2>1 · 해상도 — 한 칸에 몇 점을 담을 수 있는가</h2>
+  <p class="note">같은 격자에 같은 그림을 네 가지 방식으로 그렸다. 오른쪽으로 갈수록
+  한 칸에 담는 정보가 늘어난다. <b>점자(Braille)는 한 칸에 2×4 = 8점</b>이라
+  사실상 비트맵이 된다.</p>
+  <div class="pair">
+    <div><pre id="r1"></pre><p class="cap" id="c1"></p></div>
+    <div><pre id="r2"></pre><p class="cap" id="c2"></p></div>
+  </div>
+  <div class="pair" style="margin-top:12px">
+    <div><pre id="r3"></pre><p class="cap" id="c3"></p></div>
+    <div><pre id="r4"></pre><p class="cap" id="c4"></p></div>
+  </div>
+  <table id="restab"></table>
+</section>
+
+<section>
+  <h2>2 · 반칸 + 색 — 진짜 컬러 이미지</h2>
+  <p class="note"><b>▀</b> 한 글자에 글자색과 배경색을 따로 주면 한 칸이 위아래
+  두 개의 독립된 컬러 픽셀이 된다. 세로 해상도가 두 배가 되고, 색은 24비트 전부 쓸 수 있다.
+  아래는 문자 격자로 그린 컬러 그라디언트다.</p>
+  <pre id="halfblock"></pre>
+</section>
+
+<section>
+  <h2>3 · 부드러운 움직임 — 칸보다 작게 움직이기</h2>
+  <p class="note">칸 단위로만 움직이면 0.3칸 이동은 안 보인다.
+  <b>▏▎▍▌▋▊▉█</b> 여덟 단계의 부분 블록으로 칸을 쪼개면 <b>가로 해상도가 8배</b>가 되어
+  미끄러지듯 움직인다. 위가 칸 단위, 아래가 1/8칸 단위다.</p>
+  <pre id="subcell"></pre>
+</section>
+
+<section>
+  <h2>4 · 스프라이트 애니메이션</h2>
+  <p class="note">글자 행렬을 여러 장 두고 돌린다. 던전의 몬스터가 쓰는 방식이며,
+  거리에 따라 최근접 표본으로 늘리거나 줄인다. 왼쪽이 원본 프레임, 오른쪽이 절반 크기로
+  줄인 것 — <b>작아져도 실루엣이 남는지</b>가 관건이다.</p>
+  <div class="pair">
+    <div><pre id="sprite"></pre></div>
+    <div><pre id="spriteSmall"></pre></div>
+  </div>
+</section>
+
+<section>
+  <h2>5 · 화면 효과</h2>
+  <p class="note">프레임버퍼를 통째로 흔들거나 덮는 것은 문자 격자에서 오히려 쉽다.
+  피격 시 흔들림, 명멸, 전환 와이프.</p>
+  <pre id="fx"></pre>
+  <div class="row">
+    <button id="bShake">흔들림</button>
+    <button id="bFlash">섬광</button>
+    <button id="bWipe">와이프</button>
+  </div>
+</section>
+
+<section>
+  <h2>6 · 못 하는 것</h2>
+  <p class="note">한계도 분명하다.</p>
+  <table>
+    <tr><th>어려운 것</th><th>왜</th><th>우회</th></tr>
+    <tr><td class="n">스프라이트 회전</td><td>글자 격자는 돌아가지 않는다</td><td>각도별 프레임을 미리 그린다</td></tr>
+    <tr><td class="n">부드러운 그라디언트</td><td>농담 단계가 5~6개뿐</td><td>색을 함께 쓰면 사실상 해결된다</td></tr>
+    <tr><td class="n">반투명 겹침</td><td>한 칸에 한 글자</td><td>디더링(점을 섞어 농도 표현)</td></tr>
+    <tr><td class="n">곡선</td><td>계단이 눈에 보인다</td><td>점자·반칸으로 해상도를 올린다</td></tr>
+    <tr><td class="n">많은 스프라이트</td><td>칸마다 span 이면 DOM 이 폭발</td><td>같은 색 구간을 묶는다 (이 페이지가 쓰는 방식)</td></tr>
+  </table>
+</section>
+</div>
+<script>
+/* 공통 — 밝기 배열을 문자로 바꾸는 여러 방법을 비교한다.
+   원본은 절차적으로 만든 회색조 이미지 하나. */
+var IW=96, IH=48;
+function source(x,y,t){                        // 0..1 밝기
+  var nx=x/IW*2-1, ny=y/IH*2-1;
+  var d=Math.sqrt(nx*nx+ny*ny*1.6);
+  var ring=Math.sin(d*7 - t*1.6)*0.5+0.5;
+  var glow=Math.max(0,1-d*1.05);
+  var wave=Math.sin(nx*5+t)*0.08;
+  return Math.max(0, Math.min(1, glow*0.75 + ring*glow*0.55 + wave));
+}
+function grid(t){
+  var g=[];
+  for(var y=0;y<IH;y++){ var row=[];
+    for(var x=0;x<IW;x++) row.push(source(x,y,t));
+    g.push(row); }
+  return g;
+}
+function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function put(id,html){ document.getElementById(id).innerHTML=html; }
+
+/* ── 1. 해상도 네 가지 ───────────────────────────────────── */
+var RAMP1=" .:-=+*#%@";                        // 아스키 농담 10단
+var RAMP2=" ░▒▓█";                             // 블록 농담 5단
+function drawRamp(g,ramp,sx,sy){
+  var out="";
+  for(var y=0;y<IH;y+=sy){
+    for(var x=0;x<IW;x+=sx){
+      var v=g[y][x];
+      out+=ramp.charAt(Math.min(ramp.length-1, Math.floor(v*ramp.length)));
+    }
+    out+="\n";
+  }
+  return esc(out);
+}
+/* 사분면 블록 — 한 칸에 2x2 = 4점 */
+var QUAD=[" ","▘","▝","▀","▖","▌","▞","▛","▗","▚","▐","▜","▄","▙","▟","█"];
+function drawQuad(g){
+  var out="";
+  for(var y=0;y<IH;y+=2){
+    for(var x=0;x<IW;x+=2){
+      var b=0;
+      if(g[y][x]>0.5) b|=1;
+      if(g[y][x+1]>0.5) b|=2;
+      if(g[y+1][x]>0.5) b|=4;
+      if(g[y+1][x+1]>0.5) b|=8;
+      out+=QUAD[b];
+    }
+    out+="\n";
+  }
+  return out;
+}
+/* 점자 — 한 칸에 2x4 = 8점. U+2800 + 비트마스크 */
+var BR=[0x01,0x08,0x02,0x10,0x04,0x20,0x40,0x80];   // (x,y) 순서에 맞춘 비트
+function drawBraille(g){
+  var out="";
+  for(var y=0;y<IH;y+=4){
+    for(var x=0;x<IW;x+=2){
+      var b=0, i=0;
+      for(var dy=0;dy<4;dy++) for(var dx=0;dx<2;dx++){
+        if(g[y+dy] && g[y+dy][x+dx]>0.5) b|=BR[dy*2+dx];
+      }
+      out+=String.fromCharCode(0x2800+b);
+    }
+    out+="\n";
+  }
+  return out;
+}
+
+/* ── 2. 반칸 + 색 ────────────────────────────────────────── */
+function hex(v){ var s=Math.max(0,Math.min(255,Math.round(v))).toString(16); return s.length<2?"0"+s:s; }
+/* 색을 그대로 쓰면 칸마다 색이 달라져 span 이 폭발한다 (프레임당 1600개).
+   채널을 24 단위로 양자화하면 같은 색 구간이 길어져 span 이 줄고,
+   눈으로는 차이가 거의 없다 — 문자 격자에서 DOM 이 곧 성능이다 */
+function q(v){ return Math.round(v/24)*24; }
+function tint(v,warm){
+  return "#"+hex(q(v*255*(warm?1:0.55)))+hex(q(v*255*(warm?0.62:0.78)))+hex(q(v*255*(warm?0.34:1)));
+}
+function drawHalf(g,t){
+  var out="", HW=72;                           // 폭을 줄여 비용을 더 낮춘다
+  for(var y=0;y<IH;y+=2){
+    var run="", cf="", cb="";
+    for(var x=0;x<HW;x++){
+      var top=g[y][x], bot=g[y+1]?g[y+1][x]:0;
+      var f=tint(top, x/IW>0.5), b=tint(bot, x/IW>0.5);
+      if(f!==cf||b!==cb){
+        if(run) out+='<span style="color:'+cf+';background:'+cb+'">'+run+'</span>';
+        run=""; cf=f; cb=b;
+      }
+      run+="▀";
+    }
+    out+='<span style="color:'+cf+';background:'+cb+'">'+run+'</span>\n';
+  }
+  return out;
+}
+
+/* ── 3. 부분 블록으로 칸보다 작게 움직이기 ────────────────── */
+var PART=["▏","▎","▍","▌","▋","▊","▉","█"];
+function drawSub(t){
+  var W2=76, out="";
+  function line(pos, sub){
+    var s=new Array(W2).fill(" ");
+    var ip=Math.floor(pos);
+    if(sub){
+      var fr=pos-ip, k=Math.min(7,Math.floor(fr*8));
+      if(ip>=0&&ip<W2) s[ip]=PART[7-k];        // 왼쪽이 깎인 블록
+      if(ip+1<W2) s[ip+1]=PART[k===0?0:k-1];
+      for(var i=2;i<8;i++) if(ip+i<W2) s[ip+i]="█";
+    } else {
+      for(var i=0;i<8;i++) if(ip+i<W2) s[ip+i]="█";
+    }
+    return s.join("");
+  }
+  var pos=(Math.sin(t*0.9)*0.5+0.5)*(W2-10);
+  out += line(pos,false)+"\n";
+  out += "   칸 단위 — 0.3칸은 안 움직인다".padEnd(0)+"\n\n";
+  out += line(pos,true)+"\n";
+  out += "   1/8칸 단위 — 미끄러진다";
+  return out;
+}
+
+/* ── 4. 스프라이트 애니메이션 ────────────────────────────── */
+var FR=[
+[ "   ░▒▒▒░   ",
+  "  ▒█████▒  ",
+  " ▓███████▓ ",
+  " ▓█▒▒▒▒▒█▓ ",
+  " ▓█▒ ● ▒█▓ ",
+  " ▓█▒▒▒▒▒█▓ ",
+  " ▒███████▒ ",
+  "  ███████  ",
+  " ▒███████▒ ",
+  "▒█████████▒",
+  " ░███████░ ",
+  "  ▒▒▒▒▒▒▒  ",
+  "  ░░   ░░  " ],
+[ "   ░▒▒▒░   ",
+  "  ▒█████▒  ",
+  " ▓███████▓ ",
+  " ▓█▒▒▒▒▒█▓ ",
+  " ▓█▒ ● ▒█▓ ",
+  " ▓█▒▒▒▒▒█▓ ",
+  "▒████████▒ ",
+  " ███████   ",
+  "▒████████▒ ",
+  "▒█████████▒",
+  " ░███████░ ",
+  "  ▒▒▒▒▒▒  ",
+  " ░░    ░░  " ],
+[ "   ░▒▒▒░   ",
+  "  ▒█████▒  ",
+  " ▓███████▓ ",
+  " ▓█▒▒▒▒▒█▓ ",
+  " ▓█▒ o ▒█▓ ",
+  " ▓█▒▒▒▒▒█▓ ",
+  " ▒████████▒",
+  "   ███████ ",
+  " ▒████████▒",
+  "▒█████████▒",
+  " ░███████░ ",
+  "   ▒▒▒▒▒▒  ",
+  "  ░░    ░░ " ]
+];
+function drawSprite(t,scale){
+  var f=FR[Math.floor(t*4)%FR.length];
+  var h=f.length, w=f[0].length;
+  var oh=Math.round(h*scale), ow=Math.round(w*scale), out="";
+  for(var y=0;y<oh;y++){
+    for(var x=0;x<ow;x++){
+      var ch=f[Math.min(h-1,Math.floor(y/oh*h))].charAt(Math.min(w-1,Math.floor(x/ow*w)));
+      out+= ch===" " ? " " : ch;
+    }
+    out+="\n";
+  }
+  return out;
+}
+
+/* ── 5. 화면 효과 ────────────────────────────────────────── */
+var fxMode="", fxT=0;
+function drawFx(t){
+  var W3=70, H3=14, rows=[];
+  for(var y=0;y<H3;y++){
+    var s="";
+    for(var x=0;x<W3;x++){
+      var v=source(Math.floor(x/W3*IW), Math.floor(y/H3*IH), t);
+      s+=RAMP2.charAt(Math.min(4,Math.floor(v*5)));
+    }
+    rows.push(s);
+  }
+  if(fxMode==="shake" && fxT>0){
+    var amp=Math.ceil(fxT*3);
+    rows=rows.map(function(r,i){
+      var o=Math.round(Math.sin(i*2.3+fxT*40)*amp);
+      return o>0 ? new Array(o+1).join(" ")+r.slice(0,W3-o) : r.slice(-o)+new Array(-o+1).join(" ");
+    });
+  }
+  if(fxMode==="flash" && fxT>0){
+    var lvl=Math.floor(fxT*5);
+    rows=rows.map(function(r){ return r.replace(/./g,function(c){
+      var i=RAMP2.indexOf(c); return RAMP2.charAt(Math.min(4,Math.max(0,i+lvl))); }); });
+  }
+  if(fxMode==="wipe" && fxT>0){
+    var cut=Math.round((1-fxT)*W3);
+    rows=rows.map(function(r){ return r.slice(0,cut)+new Array(W3-cut+1).join(" "); });
+  }
+  return esc(rows.join("\n"));
+}
+document.getElementById("bShake").addEventListener("click",function(){ fxMode="shake"; fxT=1; });
+document.getElementById("bFlash").addEventListener("click",function(){ fxMode="flash"; fxT=1; });
+document.getElementById("bWipe").addEventListener("click",function(){ fxMode="wipe"; fxT=1; });
+
+/* ── 표 ──────────────────────────────────────────────────── */
+(function(){
+  var rows=[
+    ["방식","한 칸이 담는 점","96×48 그림에 필요한 격자","색"],
+    ["아스키 농담 10단","1 (모양만 암시)","96×48","칸당 1색"],
+    ["블록 농담 5단","1","96×48","칸당 1색"],
+    ["사분면 블록","2×2 = 4","48×24","칸당 1색"],
+    ["점자","2×4 = 8","48×12","칸당 1색"],
+    ["반칸 + 배경색","1×2 = 2 (독립 컬러)","96×24","점당 24비트"]
+  ];
+  var h="";
+  rows.forEach(function(r,i){
+    h+="<tr>";
+    r.forEach(function(cell,j){ h+= i===0 ? "<th>"+cell+"</th>" : "<td"+(j===0?" class=n":"")+">"+cell+"</td>"; });
+    h+="</tr>";
+  });
+  document.getElementById("restab").innerHTML=h;
+})();
+
+/* ── 루프 ────────────────────────────────────────────────── */
+var t0=null;
+function frame(ts){
+  if(t0===null) t0=ts;
+  var t=(ts-t0)/1000;
+  var g=grid(t);
+
+  put("r1", drawRamp(g,RAMP1,1,2));  document.getElementById("c1").textContent="아스키 농담 10단 · 96×24칸";
+  put("r2", drawRamp(g,RAMP2,1,2));  document.getElementById("c2").textContent="블록 농담 5단 · 96×24칸";
+  put("r3", esc(drawQuad(g)));       document.getElementById("c3").textContent="사분면 블록 · 48×24칸에 96×48점";
+  put("r4", esc(drawBraille(g)));    document.getElementById("c4").textContent="점자 · 48×12칸에 96×48점";
+  put("halfblock", drawHalf(g,t));
+  put("subcell", esc(drawSub(t)));
+  put("sprite", esc(drawSprite(t,1)));
+  put("spriteSmall", esc(drawSprite(t,0.5)));
+
+  if(fxT>0){ fxT-=0.02; if(fxT<0) fxT=0; }
+  put("fx", drawFx(t));
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>
