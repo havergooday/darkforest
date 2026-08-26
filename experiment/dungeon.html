@@ -16,6 +16,7 @@ h1{font-size:11px;font-weight:400;letter-spacing:.28em;color:var(--dim);margin:0
 .d0{color:#c9d3dc}.d1{color:#8b97a3}.d2{color:#5b6672}.d3{color:#39424c}.d4{color:#222932}
 .a0{color:#f0dcb4}.a1{color:#c8a877}.a2{color:#957c53}.a3{color:#5f5036}.a4{color:#3a3122}
 .m0{color:#e8a89e}.m1{color:#c07f76}.m2{color:#8e5b55}.m3{color:#5c3a36}.m4{color:#38221f}
+.q0{color:#e6edf3}.q1{color:#b9c4cf}.q2{color:#8c97a2}.q3{color:#616b75}.q4{color:#3d454d}
 .mx{color:#ff7a66}
 .hud{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--dim);margin:9px 0}
 .hud b{font-weight:400;color:var(--faint)}
@@ -59,6 +60,7 @@ input[type=range]{accent-color:var(--ember);width:180px}
   <span><b>턴</b> <span id="turns">0</span></span>
   <span><b>밟은 칸</b> <span id="seen"></span></span>
   <span><b>격자</b> <span id="grid"></span></span>
+  <span><b>장비</b> <span id="gear" class="on"></span></span>
 </div>
 <div class="cols">
   <div id="map"></div>
@@ -75,6 +77,7 @@ input[type=range]{accent-color:var(--ember);width:180px}
     <div class="row">
       <button id="bMap">지도 켜짐</button>
       <button id="bAll">전체 공개</button>
+      <button id="bGear">장비 보임</button>
       <button id="bReset">입구로</button>
     </div>
     <div class="row">
@@ -180,6 +183,47 @@ var MOBS=[
   { t:"bat", r:11, c:11, hr:11, hc:11, acc:0, awake:false, lost:0, said:0 },
   { t:"rat", r:3,  c:11, hr:3,  hc:11, acc:0, awake:false, lost:0, said:0 }
 ];
+
+/* 손에 든 것. 화면 아래 양쪽 구석에 고정으로 얹는다 —
+   원근이 없으므로 z 판정도 거리 감쇠도 하지 않는다.
+   걸을 때 위아래로 흔들리는 것만으로 1인칭 느낌이 크게 산다. */
+var SHIELD_ART=[
+  "    ▒▓███▓▒  ",
+  "  ▒▓███████▓▒",
+  " ▒▓█████████▓",
+  "▒▓███████████",
+  "▓█████████▓██",
+  "███████▓█████",
+  "█████████████",
+  "▓███████████▓",
+  " ▓█████████▓ ",
+  "  ▒▓█████▓▒  "
+];
+var SWORD_ART=[
+  "    █    ",
+  "   ▓█▓   ",
+  "   ███   ",
+  "   ███   ",
+  "   ███   ",
+  "   ███   ",
+  "   ███   ",
+  "  █████  ",
+  " ▓█████▓ ",
+  "▓▓▓███▓▓▓",
+  "   ███   ",
+  "   ▒█▒   ",
+  "  ▒███▒  ",
+  "  ▓███▓  "
+];
+/* x·y 는 화면 폭·높이에 대한 비율. 아래로 삐져나가게 두어 손에 든 느낌을 낸다 */
+var EQUIP=[
+  /* 아래로 잘리면 형태가 사라져 벽처럼 보인다 — 전체가 화면 안에 들어오게 잡는다 */
+  { n:"나무 방패", art:SHIELD_ART, aw:13, ah:10, pal:10,
+    w:0.170, h:0.29, x:0.010, y:0.665, sway:-1, bob:1.0 },
+  { n:"낡은 검",   art:SWORD_ART,  aw:9,  ah:14, pal:50,
+    w:0.085, h:0.46, x:0.870, y:0.520, sway:1,  bob:1.4 }
+];
+var showEquip=true, walkPhase=0;
 
 var FOV=Math.PI/3, VIEW=14, WALLH=1.55;
 var W=132, H=44, MAXW=150, MAXH=50;
@@ -414,9 +458,43 @@ function render(px,py,hd){
     }
   }
 
+  /* 손에 든 것 — 맨 위에 얹는다. 구간 표본은 생물과 같은 방식(가는 것이
+     사라지지 않게)이고, 거리 감쇠는 하지 않는다. 바로 눈앞이므로 늘 또렷하다 */
+  if(showEquip){
+    var bobW=Math.sin(walkPhase)*0.5+Math.sin(tSec*1.1)*0.35;   // 걸음 + 숨
+    var swayW=Math.cos(walkPhase*0.5)*0.6;
+    for(var ei=0;ei<EQUIP.length;ei++){
+      var Q=EQUIP[ei];
+      var qw=Math.max(3,Math.round(W*Q.w)), qh=Math.max(3,Math.round(H*Q.h));
+      var qx=Math.round(W*Q.x + swayW*Q.sway);
+      var qy=Math.round(H*Q.y + bobW*Q.bob);
+      for(var sc2=0; sc2<qw; sc2++){
+        var col2=qx+sc2; if(col2<0||col2>=W) continue;
+        var qx0=Math.floor(sc2/qw*Q.aw), qx1=Math.min(Q.aw, Math.max(qx0+1, Math.floor((sc2+1)/qw*Q.aw)));
+        for(var sr2=0; sr2<qh; sr2++){
+          var row3=qy+sr2; if(row3<0||row3>=H) continue;
+          var qy0=Math.floor(sr2/qh*Q.ah), qy1=Math.min(Q.ah, Math.max(qy0+1, Math.floor((sr2+1)/qh*Q.ah)));
+          var qb=-1;
+          for(var yy2=qy0; yy2<qy1; yy2++){
+            var ln=Q.art[yy2];
+            for(var xx2=qx0; xx2<qx1; xx2++){
+              var qc=ln.charAt(xx2); if(qc===" ") continue;
+              var qd=DENS[qc]; if(qd===undefined) qd=2;
+              if(qb<0||qd<qb) qb=qd;
+            }
+          }
+          if(qb<0) continue;
+          buf[row3][col2]=MRAMP[qb]; lv[row3][col2]=Q.pal+Math.min(2,qb);
+          z[row3][col2]=0;
+        }
+      }
+    }
+  }
+
   var esc={"&":"&amp;","<":"&lt;",">":"&gt;"}, html="";
   var wrap=function(v,run){
-    var cls = v===39 ? "mx" : v>=30 ? ("m"+(v-30)) : v>=10 ? ("a"+(v-10)) : ("d"+v);
+    var cls = v>=50 ? ("q"+(v-50)) : v===39 ? "mx" : v>=30 ? ("m"+(v-30))
+            : v>=10 ? ("a"+(v-10)) : ("d"+v);
     return "<span class="+cls+">"+run+"</span>"; };
   for(r=0;r<H;r++){
     var run="", cur=lv[r][0];
@@ -585,6 +663,8 @@ document.getElementById("bMap").addEventListener("click",function(){
 document.getElementById("bAll").addEventListener("click",function(){
   revealAll=!revealAll; this.textContent=revealAll?"밟은 곳만":"전체 공개"; });
 document.getElementById("bReset").addEventListener("click",reset);
+document.getElementById("bGear").addEventListener("click",function(){
+  showEquip=!showEquip; this.textContent=showEquip?"장비 보임":"장비 숨김"; });
 var vslide=document.getElementById("vslide");
 vslide.addEventListener("input",function(){
   VIEW=+vslide.value; document.getElementById("vnum").textContent=VIEW; });
@@ -597,6 +677,9 @@ function loop(ts){
   var k=1-Math.pow(0.0005,dt);                      // 지수 보간 — 칸 이동에 무게를 준다
   px+=(tx-px)*k; py+=(ty-py)*k;
   hd = wrapAng(hd + angDiff(thd,hd)*k);
+  /* 목적지에 아직 못 닿았으면 걷는 중 — 그때만 위상을 돌려 손이 흔들린다 */
+  var moving = Math.abs(tx-px)+Math.abs(ty-py) > 0.03 || Math.abs(angDiff(thd,hd)) > 0.03;
+  walkPhase += dt*(moving ? 7.5 : 0.9);
 
   doorTick(dt);
 
@@ -606,6 +689,8 @@ function loop(ts){
   document.getElementById("turns").textContent=turns;
   var walked=0; for(var key in visited) if(visited[key]===1) walked++;
   document.getElementById("seen").textContent=walked;
+  document.getElementById("gear").textContent=
+    showEquip ? EQUIP.map(function(q){return q.n;}).join(" · ") : "없음";
 
   var m="";
   if(showMap){
