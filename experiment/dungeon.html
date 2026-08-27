@@ -73,6 +73,10 @@ input[type=range]{accent-color:var(--ember);width:180px}
     <button data-k="d">우향 ▶</button>
     <button data-k="s" class="wide">▼ 후진</button>
   </div>
+  <div class="pad" style="grid-template-columns:repeat(2,86px)">
+    <button id="bSwing">⚔ 휘두르기</button>
+    <button id="bGuard">🛡 막기</button>
+  </div>
   <div class="side">
     <div class="row">
       <button id="bMap">지도 켜짐</button>
@@ -87,7 +91,8 @@ input[type=range]{accent-color:var(--ember);width:180px}
   </div>
 </div>
 <div class="keys">
-  <kbd>W</kbd><kbd>S</kbd> 전진·후진 · <kbd>A</kbd><kbd>D</kbd> 좌향·우향 · <kbd>M</kbd> 지도
+  <kbd>W</kbd><kbd>S</kbd> 전진·후진 · <kbd>A</kbd><kbd>D</kbd> 좌향·우향 ·
+  <kbd>Space</kbd> 휘두르기 · <kbd>Shift</kbd> 막기(누르고 있기) · <kbd>M</kbd> 지도
 </div>
 </div>
 <script>
@@ -180,8 +185,8 @@ var MOBT={
          speed:0.9, sight:5, forget:2, sway:2.2,  bob:0.55, chase:0 }
 };
 var MOBS=[
-  { t:"bat", r:11, c:11, hr:11, hc:11, acc:0, awake:false, lost:0, said:0 },
-  { t:"rat", r:3,  c:11, hr:3,  hc:11, acc:0, awake:false, lost:0, said:0 }
+  { t:"bat", r:11, c:11, hr:11, hc:11, acc:0, awake:false, lost:0, said:0, flee:0 },
+  { t:"rat", r:3,  c:11, hr:3,  hc:11, acc:0, awake:false, lost:0, said:0, flee:0 }
 ];
 
 /* 손에 든 것. 화면 아래 양쪽 구석에 고정으로 얹는다 —
@@ -215,15 +220,58 @@ var SWORD_ART=[
   "  ▒███▒  ",
   "  ▓███▓  "
 ];
-/* x·y 는 화면 폭·높이에 대한 비율. 아래로 삐져나가게 두어 손에 든 느낌을 낸다 */
+/* 아스키 격자는 회전하지 않는다. 검을 돌리는 대신 대각선 궤적을 따로 그려
+   화면을 쓸고 지나가게 한다 — 회전 없이 "벴다"가 읽히는 가장 싼 방법이다 */
+var SWORD_SLASH=[
+  "          ▓█",
+  "        ▓███",
+  "      ▓███  ",
+  "    ▓███    ",
+  "  ▓███      ",
+  "▓███        ",
+  "██          "
+];
+
+/* x·y 는 화면 폭·높이에 대한 비율 */
 var EQUIP=[
   /* 아래로 잘리면 형태가 사라져 벽처럼 보인다 — 전체가 화면 안에 들어오게 잡는다 */
-  { n:"나무 방패", art:SHIELD_ART, aw:13, ah:10, pal:10,
+  { id:"shield", n:"나무 방패", art:SHIELD_ART, aw:13, ah:10, pal:10,
     w:0.170, h:0.29, x:0.010, y:0.665, sway:-1, bob:1.0 },
-  { n:"낡은 검",   art:SWORD_ART,  aw:9,  ah:14, pal:50,
+  { id:"sword",  n:"낡은 검",   art:SWORD_ART,  aw:9,  ah:14, pal:50,
     w:0.085, h:0.46, x:0.870, y:0.520, sway:1,  bob:1.4 }
 ];
 var showEquip=true, walkPhase=0;
+var ANIM={name:"", t:0, dur:0};        // 한 번에 하나만
+var guarding=false, guardAmt=0;        // 방어는 누르고 있는 동안
+
+/* 자세 — 기본값을 애니메이션 진행도로 흔든다.
+   원본을 건드리지 않고 매 프레임 새로 계산한다 */
+function equipPose(Q){
+  var p={art:Q.art, aw:Q.aw, ah:Q.ah, w:Q.w, h:Q.h, x:Q.x, y:Q.y};
+  if(Q.id==="sword" && ANIM.name==="attack"){
+    var t=ANIM.t;
+    if(t<0.30){                                  // 들어올린다
+      var k=t/0.30;
+      p.x=Q.x+0.02*k; p.y=Q.y-0.22*k; p.h=Q.h*(1+0.12*k);
+    } else if(t<0.62){                           // 벤다 — 오른쪽 위에서 왼쪽 아래로
+      var k2=(t-0.30)/0.32;
+      p.art=SWORD_SLASH; p.aw=12; p.ah=7;
+      p.w=0.60; p.h=0.46;
+      p.x=0.58-0.56*k2;
+      p.y=0.06+0.44*k2;
+    } else {                                     // 회수
+      var k3=(t-0.62)/0.38, r=(1-k3)*(1-k3);
+      p.x=Q.x+0.02*r; p.y=Q.y-0.22*r; p.h=Q.h*(1+0.12*r);
+    }
+  }
+  if(Q.id==="shield"){                           // 막으면 올라오고 커진다
+    p.x=Q.x+0.085*guardAmt;
+    p.y=Q.y-0.215*guardAmt;
+    p.w=Q.w*(1+0.26*guardAmt);
+    p.h=Q.h*(1+0.26*guardAmt);
+  }
+  return p;
+}
 
 var FOV=Math.PI/3, VIEW=14, WALLH=1.55;
 var W=132, H=44, MAXW=150, MAXH=50;
@@ -464,19 +512,19 @@ function render(px,py,hd){
     var bobW=Math.sin(walkPhase)*0.5+Math.sin(tSec*1.1)*0.35;   // 걸음 + 숨
     var swayW=Math.cos(walkPhase*0.5)*0.6;
     for(var ei=0;ei<EQUIP.length;ei++){
-      var Q=EQUIP[ei];
-      var qw=Math.max(3,Math.round(W*Q.w)), qh=Math.max(3,Math.round(H*Q.h));
-      var qx=Math.round(W*Q.x + swayW*Q.sway);
-      var qy=Math.round(H*Q.y + bobW*Q.bob);
+      var Q=EQUIP[ei], P=equipPose(Q);
+      var qw=Math.max(3,Math.round(W*P.w)), qh=Math.max(3,Math.round(H*P.h));
+      var qx=Math.round(W*P.x + swayW*Q.sway);
+      var qy=Math.round(H*P.y + bobW*Q.bob);
       for(var sc2=0; sc2<qw; sc2++){
         var col2=qx+sc2; if(col2<0||col2>=W) continue;
-        var qx0=Math.floor(sc2/qw*Q.aw), qx1=Math.min(Q.aw, Math.max(qx0+1, Math.floor((sc2+1)/qw*Q.aw)));
+        var qx0=Math.floor(sc2/qw*P.aw), qx1=Math.min(P.aw, Math.max(qx0+1, Math.floor((sc2+1)/qw*P.aw)));
         for(var sr2=0; sr2<qh; sr2++){
           var row3=qy+sr2; if(row3<0||row3>=H) continue;
-          var qy0=Math.floor(sr2/qh*Q.ah), qy1=Math.min(Q.ah, Math.max(qy0+1, Math.floor((sr2+1)/qh*Q.ah)));
+          var qy0=Math.floor(sr2/qh*P.ah), qy1=Math.min(P.ah, Math.max(qy0+1, Math.floor((sr2+1)/qh*P.ah)));
           var qb=-1;
           for(var yy2=qy0; yy2<qy1; yy2++){
-            var ln=Q.art[yy2];
+            var ln=P.art[yy2];
             for(var xx2=qx0; xx2<qx1; xx2++){
               var qc=ln.charAt(xx2); if(qc===" ") continue;
               var qd=DENS[qc]; if(qd===undefined) qd=2;
@@ -570,6 +618,24 @@ function turn(s){ face=(face+s+4)%4; thd=face*Math.PI/2; turns++; mobTurn(); }
 /* 문 개폐 — 인접하면 열린다. 플레이어만 열면 생물이 문에 영영 막혀
    문이 넘을 수 없는 벽이 된다. 깨어난 생물도 열되, 여는 데 턴이 걸리므로
    그 사이에 거리가 벌어진다 */
+/* 휘두르기 — 한 턴을 쓴다. 피해도 체력도 없다.
+   앞 칸의 생물을 놀라게 해 몇 턴 물러나게 할 뿐이다.
+   전투 시스템으로 넘어가는 선은 넘지 않는다 */
+function swing(){
+  if(ANIM.name) return;
+  ANIM.name="attack"; ANIM.t=0; ANIM.dur=0.44;
+  turns++;
+  var d=DIR[face], fr=cr+d[0], fc=cc+d[1], hit=null;
+  for(var i=0;i<MOBS.length;i++)
+    if(MOBS[i].r===fr && MOBS[i].c===fc) hit=MOBS[i];
+  if(hit){
+    var T=MOBT[hit.t];
+    hit.flee=4; hit.awake=false; hit.lost=T.forget+1; hit.said=0;
+    say(T.n+"가 놀라 물러난다.");
+  } else say("허공을 갈랐다.");
+  mobTurn(); mark();
+}
+
 function doorTick(dt){
   var dk=1-Math.pow(0.004,dt);
   for(var di=0;di<DOORS.length;di++){
@@ -594,6 +660,14 @@ function mobTurn(){
     var d=Math.abs(M.r-cr)+Math.abs(M.c-cc);
     var see=los(M.r,M.c,cr,cc) && d<=T.sight;
 
+    /* 놀란 동안은 반대로 달아난다. 휘둘러 쫓아냈다는 것이 몸으로 읽혀야 한다 */
+    if(M.flee>0){
+      M.flee--;
+      var ar=M.r+(M.r-cr>0?1:-1), ac=M.c;
+      if(!walk(at(ar,M.c))){ ar=M.r; ac=M.c+(M.c-cc>0?1:-1); }
+      if(walk(at(ar,ac))){ M.r=ar; M.c=ac; }
+      continue;
+    }
     if(see){ M.lost=0; if(!M.awake){ M.awake=true; say(T.n+"가 이쪽을 알아챘다."); } }
     else if(M.awake){
       M.lost++;
@@ -636,7 +710,7 @@ function reset(){
   turns=0; visited={}; logs=[]; revealAll=false;
   for(var mi2=0;mi2<MOBS.length;mi2++){
     var M2=MOBS[mi2]; M2.r=M2.hr; M2.c=M2.hc;
-    M2.acc=0; M2.awake=false; M2.lost=0; M2.said=0;
+    M2.acc=0; M2.awake=false; M2.lost=0; M2.said=0; M2.flee=0;
   }
   document.getElementById("bAll").textContent="전체 공개";
   say("성의 지하다. 등 뒤로 올라가는 계단이 있다.");
@@ -654,6 +728,12 @@ document.addEventListener("keydown",function(e){
   if(k==="m"){ showMap=!showMap; return; }
   if(KMAP[k]){ e.preventDefault(); k=KMAP[k]; }
   if("wsad".indexOf(k)>=0){ e.preventDefault(); act(k); }
+  if(k===" "||k==="f"){ e.preventDefault(); swing(); }
+  if(k==="g"||k==="shift"){ guarding=true; }
+});
+document.addEventListener("keyup",function(e){
+  var k2=e.key.toLowerCase();
+  if(k2==="g"||k2==="shift") guarding=false;
 });
 Array.prototype.forEach.call(document.querySelectorAll(".pad button"),function(b){
   b.addEventListener("pointerdown",function(e){ e.preventDefault(); act(b.getAttribute("data-k")); });
@@ -663,6 +743,15 @@ document.getElementById("bMap").addEventListener("click",function(){
 document.getElementById("bAll").addEventListener("click",function(){
   revealAll=!revealAll; this.textContent=revealAll?"밟은 곳만":"전체 공개"; });
 document.getElementById("bReset").addEventListener("click",reset);
+document.getElementById("bSwing").addEventListener("pointerdown",function(e){
+  e.preventDefault(); swing(); });
+(function(){
+  var g=document.getElementById("bGuard");
+  g.addEventListener("pointerdown",function(e){ e.preventDefault(); guarding=true; });
+  g.addEventListener("pointerup",   function(){ guarding=false; });
+  g.addEventListener("pointercancel",function(){ guarding=false; });
+  g.addEventListener("pointerleave",function(){ guarding=false; });
+})();
 document.getElementById("bGear").addEventListener("click",function(){
   showEquip=!showEquip; this.textContent=showEquip?"장비 보임":"장비 숨김"; });
 var vslide=document.getElementById("vslide");
@@ -680,6 +769,8 @@ function loop(ts){
   /* 목적지에 아직 못 닿았으면 걷는 중 — 그때만 위상을 돌려 손이 흔들린다 */
   var moving = Math.abs(tx-px)+Math.abs(ty-py) > 0.03 || Math.abs(angDiff(thd,hd)) > 0.03;
   walkPhase += dt*(moving ? 7.5 : 0.9);
+  if(ANIM.name){ ANIM.t += dt/ANIM.dur; if(ANIM.t>=1){ ANIM.name=""; ANIM.t=0; } }
+  guardAmt += ((guarding?1:0)-guardAmt)*(1-Math.pow(0.002,dt));
 
   doorTick(dt);
 
