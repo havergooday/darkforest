@@ -298,10 +298,15 @@ function wrapAng(a){ a%=TAU; return a<0 ? a+TAU : a; }
    쥐가 한 칸 앞에 있을 때 실제로 6% 만 보였다 — 안 보이는 것과 싸운 셈이다.
    사람이라면 고개를 숙여 볼 것이므로, 아래로 삐져나가는 양을 제한한다.
    멀리 있을 때는 걸리지 않아 바닥에 붙은 채로 남는다 */
-function frameBase(base, sh){
-  var maxB = H - 1 + sh*0.30;
+function frameBase(base, sh, d){
+  /* 한두 칸 앞이면 붙잡아 보여 주지만, 바짝 붙으면 놓아 준다.
+     붙잡고만 있으면 지나칠 때 발밑으로 흘러가지 못하고 화면에 걸린 채
+     커지다가 툭 사라진다 */
+  var allow = d < 1.0 ? 0.30 + (1.0-d)*1.8 : 0.30;
+  var maxB = H - 1 + sh*allow;
   return base > maxB ? Math.round(maxB) : base;
 }
+var NEAR_MIN = 0.55;   // 이보다 가까워도 크기는 더 커지지 않는다 (1/d 폭주 방지)
 
 function at(r,c){ return (r<0||r>=N||c<0||c>=N) ? "#" : MAP[r][c]; }
 function solid(ch){ return ch==="#" || ch==="+"; }          // 문은 시야를 막되 지나갈 수 있다
@@ -448,19 +453,19 @@ function render(px,py,hd){
   for(r=0;r<N;r++) for(c=0;c<N;c++){
     var t=MAP[r][c]; if(!FEAT[t]) continue;
     var ox=c+0.5, oy=r+0.5, dx=ox-px, dy=oy-py;
-    var dd=Math.sqrt(dx*dx+dy*dy); if(dd>VIEW||dd<0.15) continue;
+    var dd=Math.sqrt(dx*dx+dy*dy); if(dd>VIEW||dd<0.30) continue;
     sp.push({t:t,d:dd,dx:dx,dy:dy});
   }
   sp.sort(function(a,b){return b.d-a.d;});
   for(var i=0;i<sp.length;i++){
     var o=sp[i], rel=Math.atan2(o.dy,o.dx)-hd;
     while(rel>Math.PI) rel-=2*Math.PI; while(rel<-Math.PI) rel+=2*Math.PI;
-    if(Math.abs(rel)>FOV*0.72) continue;
+    if(Math.abs(rel)>FOV*1.10) continue;    // 화면 밖에서 잘리게
     var F=FEAT[o.t], L3=lvl(o.d);
-    var perp2=o.d*Math.cos(rel);
+    var perp2=o.d*Math.cos(rel); if(perp2<NEAR_MIN) perp2=NEAR_MIN;
     var cx=Math.round((rel/FOV+0.5)*W);
     var hh2=(H*WALLH*F.h)/perp2, wpx=Math.max(1,Math.round((H*WALLH*F.w)/perp2/2.2));
-    var base=frameBase(hz+Math.round((H*WALLH*0.5)/perp2) - Math.round(hh2*F.lift), hh2);
+    var base=frameBase(hz+Math.round((H*WALLH*0.5)/perp2) - Math.round(hh2*F.lift), hh2, o.d);
     var t0=Math.round(base-hh2), t1=base;
     for(var cc=cx-(wpx>>1); cc<=cx+(wpx>>1); cc++){
       if(cc<0||cc>=W) continue;
@@ -481,7 +486,7 @@ function render(px,py,hd){
     if(mdist>=VIEW || mdist<0.2) continue;
     var mrel=Math.atan2(mdy,mdx)-hd;
     while(mrel>Math.PI) mrel-=TAU; while(mrel<-Math.PI) mrel+=TAU;
-    if(Math.abs(mrel)>FOV*0.75) continue;
+    if(Math.abs(mrel)>FOV*1.10) continue;   // 화면 밖에서 잘리게 — 안에서 자르면 툭 사라진다
     if(!los(M.r,M.c,py|0,px|0)) continue;
     vis2.push({M:M,T:T,d:mdist,rel:mrel});
   }
@@ -489,14 +494,14 @@ function render(px,py,hd){
 
   for(var vi=0;vi<vis2.length;vi++){
     var V=vis2[vi], T=V.T, ML=lvl(V.d*Math.cos(V.rel));
-    var mperp=V.d*Math.cos(V.rel); if(mperp<0.15) mperp=0.15;
+    var mperp=V.d*Math.cos(V.rel); if(mperp<NEAR_MIN) mperp=NEAR_MIN;
     var ph=V.M.r*7.3+V.M.c*3.1;                        // 개체마다 위상을 달리
     var sway=Math.sin(tSec*1.7+ph)*T.sway;
     var bob=Math.sin(tSec*3.1+ph)*T.bob;
     var breath=1+Math.sin(tSec*2.3+ph)*0.03;
     var sh=(H*WALLH*T.hf*breath)/mperp, sw=sh*T.wr;
     var mcx=Math.round((V.rel/FOV+0.5)*W + sway);
-    var mbase=frameBase(hz+Math.round((H*WALLH*(0.5-T.lift))/mperp + bob), sh);
+    var mbase=frameBase(hz+Math.round((H*WALLH*(0.5-T.lift))/mperp + bob), sh, V.d);
     var mtop=Math.round(mbase-sh);
     var eyeCh=EYE[Math.min(4, ML + ((tSec%4.6)<0.12 ? 3 : 0))];
     for(var sc=0; sc<sw; sc++){
