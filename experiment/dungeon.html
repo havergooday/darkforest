@@ -17,10 +17,12 @@ h1{font-size:11px;font-weight:400;letter-spacing:.28em;color:var(--dim);margin:0
 .a0{color:#f0dcb4}.a1{color:#c8a877}.a2{color:#957c53}.a3{color:#5f5036}.a4{color:#3a3122}
 .m0{color:#e8a89e}.m1{color:#c07f76}.m2{color:#8e5b55}.m3{color:#5c3a36}.m4{color:#38221f}
 .q0{color:#e6edf3}.q1{color:#b9c4cf}.q2{color:#8c97a2}.q3{color:#616b75}.q4{color:#3d454d}
+.fl{color:#ffc25a}
 .mx{color:#ff7a66}
 .hud{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--dim);margin:9px 0}
 .hud b{font-weight:400;color:var(--faint)}
 .hud .on{color:var(--ember)}
+.hud .hpv{letter-spacing:-1px}
 .cols{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start;margin-top:6px}
 #map{font-size:12px;line-height:1.15;color:var(--faint);white-space:pre;margin:0;letter-spacing:1px}
 #map .me{color:var(--frost)}
@@ -60,6 +62,8 @@ input[type=range]{accent-color:var(--ember);width:180px}
   <span><b>턴</b> <span id="turns">0</span></span>
   <span><b>밟은 칸</b> <span id="seen"></span></span>
   <span><b>격자</b> <span id="grid"></span></span>
+  <span><b>체력</b> <span id="hp" class="hpv"></span></span>
+  <span><b>등불</b> <span id="lamp"></span></span>
   <span><b>장비</b> <span id="gear" class="on"></span></span>
 </div>
 <div class="cols">
@@ -73,8 +77,9 @@ input[type=range]{accent-color:var(--ember);width:180px}
     <button data-k="d">우향 ▶</button>
     <button data-k="s" class="wide">▼ 후진</button>
   </div>
-  <div class="pad" style="grid-template-columns:198px">
+  <div class="pad" style="grid-template-columns:repeat(2,96px)">
     <button id="bSwing">⚔ 휘두르기</button>
+    <button id="bLamp">💡 등불</button>
   </div>
   <div class="side">
     <div class="row">
@@ -91,7 +96,7 @@ input[type=range]{accent-color:var(--ember);width:180px}
 </div>
 <div class="keys">
   <kbd>W</kbd><kbd>S</kbd> 전진·후진 · <kbd>A</kbd><kbd>D</kbd> 좌향·우향 ·
-  <kbd>Space</kbd> 휘두르기 · <kbd>M</kbd> 지도
+  <kbd>Space</kbd> 휘두르기 · <kbd>Shift</kbd> 등불 · <kbd>M</kbd> 지도
 </div>
 </div>
 <script>
@@ -179,18 +184,36 @@ var EYE=["●","●","o","·"," "];
    hf=높이계수 wr=가로/세로 비 lift=바닥(0)에서 천장(1) 사이 어디에 뜨는가 */
 var MOBT={
   rat: { n:"쥐",  art:RAT_ART, aw:13, ah:9, hf:0.34, wr:1.35, lift:0.02,
-         speed:0.5, sight:8, forget:6, sway:0.4,  bob:0.00, chase:1 },
+         speed:0.5, sight:8, forget:6, sway:0.4,  bob:0.00, chase:1, hp:6, dmg:2 },
   bat: { n:"박쥐", art:BAT_ART, aw:13, ah:7, hf:0.26, wr:2.10, lift:0.52,
-         speed:0.9, sight:5, forget:2, sway:2.2,  bob:0.55, chase:0 }
+         speed:0.9, sight:5, forget:2, sway:2.2,  bob:0.55, chase:0, hp:3, dmg:0 }
 };
-var MOBS=[
-  { t:"bat", r:11, c:11, hr:11, hc:11, acc:0, awake:false, lost:0, said:0, flee:0 },
-  { t:"rat", r:3,  c:11, hr:3,  hc:11, acc:0, awake:false, lost:0, said:0, flee:0 }
-];
+var SWORD_DMG=4, PHP_MAX=20;
+var php=PHP_MAX, shakeT=0;
+var BASE_MOBS=[ {t:"bat", hr:11, hc:11}, {t:"rat", hr:3, hc:11} ];
+var MOBS=BASE_MOBS.map(function(m){ return {t:m.t,r:m.hr,c:m.hc,hr:m.hr,hc:m.hc,
+  acc:0,awake:false,lost:0,said:0,flee:0,hp:MOBT[m.t].hp}; });
 
 /* 손에 든 것. 화면 아래 오른쪽 구석에 고정으로 얹는다 —
    원근이 없으므로 z 판정도 거리 감쇠도 하지 않는다.
    걸을 때 위아래로 흔들리는 것만으로 1인칭 느낌이 크게 산다. */
+/* 등불. F 는 불꽃 — 켜져 있으면 밝게 흔들리고 꺼지면 죽는다 */
+var LANTERN_ART=[
+  "   ▒█▒   ",
+  "  ▓█ █▓  ",
+  "  ▓█ █▓  ",
+  "  ▒███▒  ",
+  " ▓█████▓ ",
+  "▒███████▒",
+  "▒██ F ██▒",
+  "▒██ F ██▒",
+  "▒███████▒",
+  " ▓█████▓ ",
+  "  ▒███▒  ",
+  "  ░▒▒▒░  "
+];
+var FLAME=["█","▓","▒","░","·"];
+
 var SWORD_ART=[
   "    █    ",
   "   ▓█▓   ",
@@ -223,9 +246,14 @@ var SWORD_SLASH=[
 /* 아래로 잘리면 형태가 사라져 벽처럼 보인다 — 전체가 화면 안에 들어오게 잡는다.
    한 손만 남으니 조금 키우고 안쪽으로 당겨 존재감을 준다 */
 var EQUIP=[
-  { id:"sword", n:"낡은 검", art:SWORD_ART, aw:9, ah:14, pal:50,
-    w:0.100, h:0.50, x:0.815, y:0.490, sway:1, bob:1.4 }
+  { id:"lantern", n:"등불", art:LANTERN_ART, aw:9, ah:12, pal:10,
+    w:0.085, h:0.38, x:0.045, y:0.560, sway:-1, bob:1.1 },
+  { id:"sword",   n:"낡은 검", art:SWORD_ART, aw:9, ah:14, pal:50,
+    w:0.100, h:0.50, x:0.815, y:0.490, sway:1,  bob:1.4 }
 ];
+/* 등불은 시야를 넓힌다. 이 게임에서 불이 곧 볼 수 있는 거리라는 규칙을
+   손에 든 물건으로 옮긴 것 */
+var VIEW_BASE=14, LANTERN_MUL=1.75, lanternOn=false;
 var showEquip=true, walkPhase=0;
 var ANIM={name:"", t:0, dur:0};        // 한 번에 하나만
 
@@ -501,14 +529,22 @@ function render(px,py,hd){
         for(var sr2=0; sr2<qh; sr2++){
           var row3=qy+sr2; if(row3<0||row3>=H) continue;
           var qy0=Math.floor(sr2/qh*P.ah), qy1=Math.min(P.ah, Math.max(qy0+1, Math.floor((sr2+1)/qh*P.ah)));
-          var qb=-1;
+          var qb=-1, qFlame=false;
           for(var yy2=qy0; yy2<qy1; yy2++){
             var ln=P.art[yy2];
             for(var xx2=qx0; xx2<qx1; xx2++){
               var qc=ln.charAt(xx2); if(qc===" ") continue;
+              if(qc==="F"){ qFlame=true; continue; }
               var qd=DENS[qc]; if(qd===undefined) qd=2;
               if(qb<0||qd<qb) qb=qd;
             }
+          }
+          if(qFlame){
+            if(lanternOn){
+              var fj=(Math.sin(tSec*13.7)+Math.sin(tSec*29.1)*0.6);
+              buf[row3][col2]=FLAME[fj>0.6?0:fj>-0.2?1:2]; lv[row3][col2]=60;
+            } else { buf[row3][col2]="·"; lv[row3][col2]=Q.pal+2; }
+            z[row3][col2]=0; continue;
           }
           if(qb<0) continue;
           buf[row3][col2]=MRAMP[qb]; lv[row3][col2]=Q.pal+Math.min(2,qb);
@@ -518,9 +554,19 @@ function render(px,py,hd){
     }
   }
 
+  /* 맞으면 화면이 흔들린다. 문자 격자에서는 통째로 밀기만 하면 되어 싸다 */
+  if(shakeT>0){
+    var so=Math.round(Math.sin(tSec*55)*Math.ceil(shakeT*2.5));
+    if(so!==0) for(r=0;r<H;r++){
+      var nb=new Array(W).fill(" "), nl=new Array(W).fill(4);
+      for(c=0;c<W;c++){ var sx2=c-so; if(sx2>=0&&sx2<W){ nb[c]=buf[r][sx2]; nl[c]=lv[r][sx2]; } }
+      buf[r]=nb; lv[r]=nl;
+    }
+  }
+
   var esc={"&":"&amp;","<":"&lt;",">":"&gt;"}, html="";
   var wrap=function(v,run){
-    var cls = v>=50 ? ("q"+(v-50)) : v===39 ? "mx" : v>=30 ? ("m"+(v-30))
+    var cls = v===60 ? "fl" : v>=50 ? ("q"+(v-50)) : v===39 ? "mx" : v>=30 ? ("m"+(v-30))
             : v>=10 ? ("a"+(v-10)) : ("d"+v);
     return "<span class="+cls+">"+run+"</span>"; };
   for(r=0;r<H;r++){
@@ -600,6 +646,21 @@ function turn(s){ face=(face+s+4)%4; thd=face*Math.PI/2; turns++; mobTurn(); }
 /* 휘두르기 — 한 턴을 쓴다. 피해도 체력도 없다.
    앞 칸의 생물을 놀라게 해 몇 턴 물러나게 할 뿐이다.
    전투 시스템으로 넘어가는 선은 넘지 않는다 */
+/* 쓰러지면 입구에서 깨어난다. 판을 되돌리지는 않는다 —
+   지도도 잡은 것도 그대로다. 되돌아가는 걸음이 곧 대가다 */
+function collapse(){
+  php=PHP_MAX; shakeT=1;
+  cr=START.r; cc=START.c; face=0;
+  px=tx=cc+0.5; py=ty=cr+0.5; hd=thd=0;
+  for(var i=0;i<MOBS.length;i++){ MOBS[i].awake=false; MOBS[i].lost=0; MOBS[i].flee=0; }
+  say("정신을 잃었다. 입구에서 깨어난다.");
+}
+
+function toggleLantern(){
+  lanternOn=!lanternOn;
+  say(lanternOn ? "등불을 켰다. 멀리까지 보인다." : "등불을 껐다.");
+}
+
 function swing(){
   if(ANIM.name) return;
   ANIM.name="attack"; ANIM.t=0; ANIM.dur=0.44;
@@ -609,8 +670,14 @@ function swing(){
     if(MOBS[i].r===fr && MOBS[i].c===fc) hit=MOBS[i];
   if(hit){
     var T=MOBT[hit.t];
-    hit.flee=4; hit.awake=false; hit.lost=T.forget+1; hit.said=0;
-    say(T.n+"가 놀라 물러난다.");
+    hit.hp-=SWORD_DMG;
+    if(hit.hp<=0){
+      MOBS.splice(MOBS.indexOf(hit),1);
+      say(T.n+"를 쓰러뜨렸다.");
+    } else {
+      hit.flee=2; hit.said=0;
+      say(T.n+"를 베었다. (-"+SWORD_DMG+")");
+    }
   } else say("허공을 갈랐다.");
   mobTurn(); mark();
 }
@@ -654,6 +721,14 @@ function mobTurn(){
     }
     if(!M.awake) continue;
 
+    /* 붙어 있으면 움직이는 대신 문다 */
+    if(T.dmg && Math.abs(M.r-cr)+Math.abs(M.c-cc)<=1){
+      php-=T.dmg; shakeT=1;
+      say(T.n+"에게 물렸다. (-"+T.dmg+")");
+      if(php<=0) collapse();
+      continue;
+    }
+
     M.acc += T.speed;
     while(M.acc >= 1){
       M.acc -= 1;
@@ -687,10 +762,10 @@ function reset(){
   cr=START.r; cc=START.c; face=0;
   px=tx=cc+0.5; py=ty=cr+0.5; hd=thd=0;
   turns=0; visited={}; logs=[]; revealAll=false;
-  for(var mi2=0;mi2<MOBS.length;mi2++){
-    var M2=MOBS[mi2]; M2.r=M2.hr; M2.c=M2.hc;
-    M2.acc=0; M2.awake=false; M2.lost=0; M2.said=0; M2.flee=0;
-  }
+  php=PHP_MAX; shakeT=0; lanternOn=false; ANIM.name=""; ANIM.t=0;
+  MOBS=BASE_MOBS.map(function(m){ return {t:m.t,r:m.hr,c:m.hc,hr:m.hr,hc:m.hc,
+    acc:0,awake:false,lost:0,said:0,flee:0,hp:MOBT[m.t].hp}; });
+
   document.getElementById("bAll").textContent="전체 공개";
   say("성의 지하다. 등 뒤로 올라가는 계단이 있다.");
   say("어딘가에 더 내려가는 길이 있을 것이다.");
@@ -708,6 +783,7 @@ document.addEventListener("keydown",function(e){
   if(KMAP[k]){ e.preventDefault(); k=KMAP[k]; }
   if("wsad".indexOf(k)>=0){ e.preventDefault(); act(k); }
   if(k===" "||k==="f"){ e.preventDefault(); swing(); }
+  if(k==="shift"||k==="l"){ e.preventDefault(); toggleLantern(); }
 });
 Array.prototype.forEach.call(document.querySelectorAll(".pad button"),function(b){
   b.addEventListener("pointerdown",function(e){ e.preventDefault(); act(b.getAttribute("data-k")); });
@@ -719,11 +795,13 @@ document.getElementById("bAll").addEventListener("click",function(){
 document.getElementById("bReset").addEventListener("click",reset);
 document.getElementById("bSwing").addEventListener("pointerdown",function(e){
   e.preventDefault(); swing(); });
+document.getElementById("bLamp").addEventListener("pointerdown",function(e){
+  e.preventDefault(); toggleLantern(); });
 document.getElementById("bGear").addEventListener("click",function(){
   showEquip=!showEquip; this.textContent=showEquip?"장비 보임":"장비 숨김"; });
 var vslide=document.getElementById("vslide");
 vslide.addEventListener("input",function(){
-  VIEW=+vslide.value; document.getElementById("vnum").textContent=VIEW; });
+  VIEW_BASE=+vslide.value; document.getElementById("vnum").textContent=VIEW_BASE; });
 
 /* ── 루프 ────────────────────────────────────────────────── */
 var last=0, tSec=0;
@@ -737,6 +815,8 @@ function loop(ts){
   var moving = Math.abs(tx-px)+Math.abs(ty-py) > 0.03 || Math.abs(angDiff(thd,hd)) > 0.03;
   walkPhase += dt*(moving ? 7.5 : 0.9);
   if(ANIM.name){ ANIM.t += dt/ANIM.dur; if(ANIM.t>=1){ ANIM.name=""; ANIM.t=0; } }
+  VIEW = VIEW_BASE * (lanternOn ? LANTERN_MUL : 1);
+  if(shakeT>0){ shakeT-=dt*3.5; if(shakeT<0) shakeT=0; }
 
   doorTick(dt);
 
@@ -746,6 +826,12 @@ function loop(ts){
   document.getElementById("turns").textContent=turns;
   var walked=0; for(var key in visited) if(visited[key]===1) walked++;
   document.getElementById("seen").textContent=walked;
+  var bars=Math.round(php/PHP_MAX*10);
+  document.getElementById("hp").textContent=
+    new Array(bars+1).join("█")+new Array(11-bars).join("░")+" "+php+"/"+PHP_MAX;
+  document.getElementById("hp").style.color = php>PHP_MAX*0.35 ? "#8bb87a" : "#c25b53";
+  document.getElementById("lamp").textContent = lanternOn ? "켜짐 (시야 "+Math.round(VIEW)+")" : "꺼짐";
+  document.getElementById("lamp").style.color = lanternOn ? "#ffc25a" : "";
   document.getElementById("gear").textContent=
     showEquip ? EQUIP.map(function(q){return q.n;}).join(" · ") : "없음";
 
