@@ -350,6 +350,74 @@ var CEIL   =["'","'","·"," "," "];
 var CJOINT =["-","-","·"," "," "];
 var DOOR_L=0.14, DOOR_R=0.86, LINTEL=0.13;
 
+/* 벽 장식.
+   무늬(모든 벽에 반복)는 정보가 없으면서 눈만 어지럽혀 걷어냈다.
+   장식은 반대다 — 특정 벽면에만 붙으므로 똑같은 벽 사이에서 랜드마크가 된다.
+   "횃불 있던 벽" 이 기억의 닻이 되어 길찾기를 돕는다. 그래서 성기게 둔다.
+   F 는 불꽃, 공백은 투명(벽이 비쳐 보임). u·v 는 벽면 위의 상자 */
+var DEC_ART={
+  torch: { pal:10, u0:0.36,u1:0.64, v0:0.16,v1:0.60, w:5, h:7, art:[
+    "  F  ",
+    " FFF ",
+    " FFF ",
+    "  █  ",
+    " ▓█▓ ",
+    "  █  ",
+    "  ▒  " ]},
+  grate: { pal:50, u0:0.26,u1:0.74, v0:0.22,v1:0.62, w:7, h:7, art:[
+    "▓▓▓▓▓▓▓",
+    "▓ █ █ ▓",
+    "▓ █ █ ▓",
+    "▓▓█▓█▓▓",
+    "▓ █ █ ▓",
+    "▓ █ █ ▓",
+    "▓▓▓▓▓▓▓" ]},
+  chain: { pal:50, u0:0.32,u1:0.68, v0:0.10,v1:0.74, w:5, h:9, art:[
+    " █ █ ",
+    " ▓ ▓ ",
+    " █ █ ",
+    " ▓ ▓ ",
+    " █ █ ",
+    " ▓ ▓ ",
+    " ▒ ▒ ",
+    "  ▒  ",
+    "     " ]},
+  crack: { pal:0,  u0:0.28,u1:0.72, v0:0.04,v1:0.96, w:5, h:9, art:[
+    "  ▒  ",
+    "  ▒  ",
+    " ▒   ",
+    " ▒   ",
+    "  ▒  ",
+    "   ▒ ",
+    "   ▒ ",
+    "  ▒  ",
+    "  ▒  " ]},
+  skull: { pal:10, u0:0.38,u1:0.62, v0:0.30,v1:0.56, w:5, h:5, art:[
+    " ███ ",
+    "█ █ █",
+    "█████",
+    " ███ ",
+    " █ █ " ]}
+};
+
+/* 어느 벽의 어느 면인가 — "행,열,면" (면 0=북 1=동 2=남 3=서).
+   방마다 다른 것을 두어 어디에 있는지 알 수 있게 한다 */
+var DEC={};
+(function(){
+  var put=function(r,c,face,kind){ DEC[(r*64+c)*4+face]=kind; };
+  put(22,11,0,"torch");  put(19,8,1,"torch");                 // H 입구
+  put(9,8,1,"torch");    put(13,14,3,"torch");                // E 큰 홀
+  put(2,2,2,"chain");    put(4,4,0,"grate");                  // A 감방
+  /* 횃불은 불꽃이 위쪽에 있어, 볼 수 있는 자리가 코앞 한 칸뿐이면 잘린다.
+     두 칸 이상 물러설 수 있는 벽에만 건다 (기둥 사이는 안 된다) */
+  put(0,11,2,"torch");                                        // B 기둥 홀
+  put(2,20,3,"crack");   put(0,18,2,"crack");                 // C 무너진 방
+  put(11,0,1,"torch");                                        // D 우물 방
+  put(10,18,3,"grate");  put(12,20,3,"grate");                // F 서고
+  put(19,0,1,"skull");   put(16,2,2,"chain");                 // G 막다른 방
+  put(19,22,3,"torch");  put(16,17,2,"torch");               // I 계단 방
+})();
+
 function render(px,py,hd){
   var buf=[],z=[],lv=[],dep=[],r,c;
   for(r=0;r<H;r++){ buf.push(new Array(W).fill(" ")); z.push(new Array(W).fill(Infinity));
@@ -387,7 +455,7 @@ function render(px,py,hd){
      열린 문은 광선이 지나간다 — 그래서 문 너머는 문이 열려야 보인다.
      열별 결과를 먼저 모은다. 이웃 열과 비교해야 모서리를 그을 수 있다 */
   var wP=new Array(W), wS=new Array(W), wC=new Array(W), wU=new Array(W),
-      wK=new Array(W), dP=new Array(W);
+      wK=new Array(W), dP=new Array(W), wF=new Array(W);
   for(c=0;c<W;c++){
     var rdx=ca[c], rdy=sa[c];
     var mx=px|0, my=py|0;
@@ -414,6 +482,8 @@ function render(px,py,hd){
     var hx = (side===0) ? (py+rdy*dist) : (px+rdx*dist);
     wU[c]=hx-Math.floor(hx);
     var perp=dist*cf[c]; if(perp<0.02) perp=0.02;
+    /* 벽의 어느 면을 보고 있는가 — 광선 진행 방향으로 정해진다 */
+    wF[c] = (side===0) ? (rdx>0 ? 3 : 1) : (rdy>0 ? 0 : 2);
     wP[c]=perp; wS[c]=side; wC[c]=hitCh; wK[c]=my*64+mx; dP[c]=doorD;
     dep[c]=perp;
   }
@@ -430,12 +500,29 @@ function render(px,py,hd){
             || (c<W-1 && (wK[c]!==wK[c+1] || wS[c]!==wS[c+1]));
     var stone = side===0?STONE_NS:STONE_EW;
     var seam  = side===0?SEAM_NS:SEAM_EW, edg = side===0?EDGE_NS:EDGE_EW;
+    /* 이 벽면에 걸린 장식이 있는가. 멀면 잡티가 되므로 가까울 때만 그린다 */
+    var Dk = (!isDoor && h>9) ? DEC_ART[DEC[wK[c]*4+wF[c]]] : null;
     for(r=Math.max(0,top); r<=Math.min(H-1,bot); r++){
-      var v=(r-top0)/h, ch, cls=L2;
+      var v=(r-top0)/h, ch, cls=L2, decCh=null;
+      if(Dk && u>Dk.u0 && u<Dk.u1 && v>Dk.v0 && v<Dk.v1){
+        var ax2=Math.min(Dk.w-1, Math.floor((u-Dk.u0)/(Dk.u1-Dk.u0)*Dk.w));
+        var ay2=Math.min(Dk.h-1, Math.floor((v-Dk.v0)/(Dk.v1-Dk.v0)*Dk.h));
+        var dc2=Dk.art[ay2].charAt(ax2);
+        if(dc2!==" ") decCh=dc2;
+      }
       if(edge) ch=seam[L2];
+      else if(decCh!==null){
+        if(decCh==="F"){
+          var ff=(Math.sin(tSec*11.3+wK[c])+Math.sin(tSec*23.7)*0.6);
+          ch=FLAME[Math.min(4,(ff>0.6?0:ff>-0.2?1:2)+L2)]; cls=60;
+        } else {
+          var dd4=DENS[decCh]; if(dd4===undefined) dd4=2;
+          ch=MRAMP[Math.min(4,dd4+L2)]; cls=Dk.pal + Math.min(4,L2);
+        }
+      }
       else if(isDoor && u>DOOR_L && u<DOOR_R && v>LINTEL){ ch=DOORF[L2]; cls=L2+10; }
       else ch=stone[L2];
-      if(!edge && (r===top||r===bot) && bot>top) ch=edg[L2];   // 바닥·천장과 만나는 실루엣
+      if(!edge && decCh===null && (r===top||r===bot) && bot>top) ch=edg[L2];  // 바닥·천장 실루엣
       buf[r][c]=ch; lv[r][c]=cls; z[r][c]=perp;
     }
     /* 열린 문을 통과한 열에는 인방을 얹는다 — 문틀이 남아야 통로로 읽힌다 */
