@@ -183,7 +183,7 @@ var EYE=["●","●","o","·"," "];
    speed 는 플레이어 턴당 몇 칸인가 — 1 이면 절대 못 떨쳐낸다.
    hf=높이계수 wr=가로/세로 비 lift=바닥(0)에서 천장(1) 사이 어디에 뜨는가 */
 var MOBT={
-  rat: { n:"쥐",  art:RAT_ART, aw:13, ah:9, hf:0.251, wr:1.35, lift:0.02,
+  rat: { n:"쥐",  art:RAT_ART, aw:13, ah:9, hf:0.340, wr:1.35, lift:0.02,
          speed:0.5, sight:8, forget:6, sway:0.4,  bob:0.00, chase:1, hp:6, dmg:2 },
   bat: { n:"박쥐", art:BAT_ART, aw:13, ah:7, hf:0.192, wr:2.10, lift:0.52,
          speed:0.9, sight:5, forget:2, sway:2.2,  bob:0.55, chase:0, hp:3, dmg:0 }
@@ -293,6 +293,15 @@ var TAU=Math.PI*2;
    floor 로 정규화하면 크기와 무관하게 옳다. */
 function angDiff(a,b){ var d=a-b; return d - TAU*Math.floor((d+Math.PI)/TAU); }
 function wrapAng(a){ a%=TAU; return a<0 ? a+TAU : a; }
+
+/* 바닥에 놓인 것은 바짝 붙으면 발밑으로 밀려나 화면 밖으로 사라진다.
+   쥐가 한 칸 앞에 있을 때 실제로 6% 만 보였다 — 안 보이는 것과 싸운 셈이다.
+   사람이라면 고개를 숙여 볼 것이므로, 아래로 삐져나가는 양을 제한한다.
+   멀리 있을 때는 걸리지 않아 바닥에 붙은 채로 남는다 */
+function frameBase(base, sh){
+  var maxB = H - 1 + sh*0.30;
+  return base > maxB ? Math.round(maxB) : base;
+}
 
 function at(r,c){ return (r<0||r>=N||c<0||c>=N) ? "#" : MAP[r][c]; }
 function solid(ch){ return ch==="#" || ch==="+"; }          // 문은 시야를 막되 지나갈 수 있다
@@ -451,7 +460,7 @@ function render(px,py,hd){
     var perp2=o.d*Math.cos(rel);
     var cx=Math.round((rel/FOV+0.5)*W);
     var hh2=(H*WALLH*F.h)/perp2, wpx=Math.max(1,Math.round((H*WALLH*F.w)/perp2/2.2));
-    var base=hz+Math.round((H*WALLH*0.5)/perp2) - Math.round(hh2*F.lift);
+    var base=frameBase(hz+Math.round((H*WALLH*0.5)/perp2) - Math.round(hh2*F.lift), hh2);
     var t0=Math.round(base-hh2), t1=base;
     for(var cc=cx-(wpx>>1); cc<=cx+(wpx>>1); cc++){
       if(cc<0||cc>=W) continue;
@@ -487,7 +496,7 @@ function render(px,py,hd){
     var breath=1+Math.sin(tSec*2.3+ph)*0.03;
     var sh=(H*WALLH*T.hf*breath)/mperp, sw=sh*T.wr;
     var mcx=Math.round((V.rel/FOV+0.5)*W + sway);
-    var mbase=hz+Math.round((H*WALLH*(0.5-T.lift))/mperp + bob);
+    var mbase=frameBase(hz+Math.round((H*WALLH*(0.5-T.lift))/mperp + bob), sh);
     var mtop=Math.round(mbase-sh);
     var eyeCh=EYE[Math.min(4, ML + ((tSec%4.6)<0.12 ? 3 : 0))];
     for(var sc=0; sc<sw; sc++){
