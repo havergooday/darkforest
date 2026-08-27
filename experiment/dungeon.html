@@ -73,9 +73,8 @@ input[type=range]{accent-color:var(--ember);width:180px}
     <button data-k="d">우향 ▶</button>
     <button data-k="s" class="wide">▼ 후진</button>
   </div>
-  <div class="pad" style="grid-template-columns:repeat(2,86px)">
+  <div class="pad" style="grid-template-columns:198px">
     <button id="bSwing">⚔ 휘두르기</button>
-    <button id="bGuard">🛡 막기</button>
   </div>
   <div class="side">
     <div class="row">
@@ -92,7 +91,7 @@ input[type=range]{accent-color:var(--ember);width:180px}
 </div>
 <div class="keys">
   <kbd>W</kbd><kbd>S</kbd> 전진·후진 · <kbd>A</kbd><kbd>D</kbd> 좌향·우향 ·
-  <kbd>Space</kbd> 휘두르기 · <kbd>Shift</kbd> 막기(누르고 있기) · <kbd>M</kbd> 지도
+  <kbd>Space</kbd> 휘두르기 · <kbd>M</kbd> 지도
 </div>
 </div>
 <script>
@@ -189,21 +188,9 @@ var MOBS=[
   { t:"rat", r:3,  c:11, hr:3,  hc:11, acc:0, awake:false, lost:0, said:0, flee:0 }
 ];
 
-/* 손에 든 것. 화면 아래 양쪽 구석에 고정으로 얹는다 —
+/* 손에 든 것. 화면 아래 오른쪽 구석에 고정으로 얹는다 —
    원근이 없으므로 z 판정도 거리 감쇠도 하지 않는다.
    걸을 때 위아래로 흔들리는 것만으로 1인칭 느낌이 크게 산다. */
-var SHIELD_ART=[
-  "    ▒▓███▓▒  ",
-  "  ▒▓███████▓▒",
-  " ▒▓█████████▓",
-  "▒▓███████████",
-  "▓█████████▓██",
-  "███████▓█████",
-  "█████████████",
-  "▓███████████▓",
-  " ▓█████████▓ ",
-  "  ▒▓█████▓▒  "
-];
 var SWORD_ART=[
   "    █    ",
   "   ▓█▓   ",
@@ -233,16 +220,14 @@ var SWORD_SLASH=[
 ];
 
 /* x·y 는 화면 폭·높이에 대한 비율 */
+/* 아래로 잘리면 형태가 사라져 벽처럼 보인다 — 전체가 화면 안에 들어오게 잡는다.
+   한 손만 남으니 조금 키우고 안쪽으로 당겨 존재감을 준다 */
 var EQUIP=[
-  /* 아래로 잘리면 형태가 사라져 벽처럼 보인다 — 전체가 화면 안에 들어오게 잡는다 */
-  { id:"shield", n:"나무 방패", art:SHIELD_ART, aw:13, ah:10, pal:10,
-    w:0.170, h:0.29, x:0.010, y:0.665, sway:-1, bob:1.0 },
-  { id:"sword",  n:"낡은 검",   art:SWORD_ART,  aw:9,  ah:14, pal:50,
-    w:0.085, h:0.46, x:0.870, y:0.520, sway:1,  bob:1.4 }
+  { id:"sword", n:"낡은 검", art:SWORD_ART, aw:9, ah:14, pal:50,
+    w:0.100, h:0.50, x:0.815, y:0.490, sway:1, bob:1.4 }
 ];
 var showEquip=true, walkPhase=0;
 var ANIM={name:"", t:0, dur:0};        // 한 번에 하나만
-var guarding=false, guardAmt=0;        // 방어는 누르고 있는 동안
 
 /* 자세 — 기본값을 애니메이션 진행도로 흔든다.
    원본을 건드리지 않고 매 프레임 새로 계산한다 */
@@ -263,12 +248,6 @@ function equipPose(Q){
       var k3=(t-0.62)/0.38, r=(1-k3)*(1-k3);
       p.x=Q.x+0.02*r; p.y=Q.y-0.22*r; p.h=Q.h*(1+0.12*r);
     }
-  }
-  if(Q.id==="shield"){                           // 막으면 올라오고 커진다
-    p.x=Q.x+0.085*guardAmt;
-    p.y=Q.y-0.215*guardAmt;
-    p.w=Q.w*(1+0.26*guardAmt);
-    p.h=Q.h*(1+0.26*guardAmt);
   }
   return p;
 }
@@ -729,11 +708,6 @@ document.addEventListener("keydown",function(e){
   if(KMAP[k]){ e.preventDefault(); k=KMAP[k]; }
   if("wsad".indexOf(k)>=0){ e.preventDefault(); act(k); }
   if(k===" "||k==="f"){ e.preventDefault(); swing(); }
-  if(k==="g"||k==="shift"){ guarding=true; }
-});
-document.addEventListener("keyup",function(e){
-  var k2=e.key.toLowerCase();
-  if(k2==="g"||k2==="shift") guarding=false;
 });
 Array.prototype.forEach.call(document.querySelectorAll(".pad button"),function(b){
   b.addEventListener("pointerdown",function(e){ e.preventDefault(); act(b.getAttribute("data-k")); });
@@ -745,13 +719,6 @@ document.getElementById("bAll").addEventListener("click",function(){
 document.getElementById("bReset").addEventListener("click",reset);
 document.getElementById("bSwing").addEventListener("pointerdown",function(e){
   e.preventDefault(); swing(); });
-(function(){
-  var g=document.getElementById("bGuard");
-  g.addEventListener("pointerdown",function(e){ e.preventDefault(); guarding=true; });
-  g.addEventListener("pointerup",   function(){ guarding=false; });
-  g.addEventListener("pointercancel",function(){ guarding=false; });
-  g.addEventListener("pointerleave",function(){ guarding=false; });
-})();
 document.getElementById("bGear").addEventListener("click",function(){
   showEquip=!showEquip; this.textContent=showEquip?"장비 보임":"장비 숨김"; });
 var vslide=document.getElementById("vslide");
@@ -770,7 +737,6 @@ function loop(ts){
   var moving = Math.abs(tx-px)+Math.abs(ty-py) > 0.03 || Math.abs(angDiff(thd,hd)) > 0.03;
   walkPhase += dt*(moving ? 7.5 : 0.9);
   if(ANIM.name){ ANIM.t += dt/ANIM.dur; if(ANIM.t>=1){ ANIM.name=""; ANIM.t=0; } }
-  guardAmt += ((guarding?1:0)-guardAmt)*(1-Math.pow(0.002,dt));
 
   doorTick(dt);
 
