@@ -89,8 +89,8 @@ input[type=range]{accent-color:var(--ember);width:180px}
       <button id="bReset">입구로</button>
     </div>
     <div class="row">
-      <label>시야 <span id="vnum">14</span></label>
-      <input id="vslide" type="range" min="3" max="26" step="1" value="14">
+      <label>시야 <span id="vnum">16</span></label>
+      <input id="vslide" type="range" min="4" max="30" step="1" value="16">
     </div>
   </div>
 </div>
@@ -139,11 +139,11 @@ var N=MAP.length;
 /* 램프가 일찍 점으로 바래면 바닥과 구별되지 않는다.
    탐험 게임에서 계단을 멀리서 못 알아보는 것은 치명적이므로 형태를 오래 붙든다 */
 var FEAT={
-  "<":{n:"올라가는 계단", ramp:["=","=","=","-","·"], h:0.55, w:0.62, lift:0.10},
-  ">":{n:"내려가는 계단", ramp:["=","=","=","-","·"], h:0.40, w:0.62, lift:-0.06},
-  "!":{n:"비문",         ramp:["I","I","!","!",":"], h:0.95, w:0.10, lift:0.28},
-  "o":{n:"잔해",         ramp:["O","O","o","o","·"], h:0.30, w:0.34, lift:-0.02},
-  "~":{n:"우물",         ramp:["U","U","u","u","·"], h:0.34, w:0.50, lift:-0.05}
+  "<":{n:"올라가는 계단", ramp:["=","=","=","-","·"], h:0.406, w:0.458, lift:0.10},
+  ">":{n:"내려가는 계단", ramp:["=","=","=","-","·"], h:0.295, w:0.458, lift:-0.06},
+  "!":{n:"비문",         ramp:["I","I","!","!",":"], h:0.701, w:0.074, lift:0.28},
+  "o":{n:"잔해",         ramp:["O","O","o","o","·"], h:0.221, w:0.251, lift:-0.02},
+  "~":{n:"우물",         ramp:["U","U","u","u","·"], h:0.251, w:0.369, lift:-0.05}
 };
 var NAME={"#":"벽","+":"문",".":"바닥"};
 for(var _k in FEAT) NAME[_k]=FEAT[_k].n;
@@ -183,9 +183,9 @@ var EYE=["●","●","o","·"," "];
    speed 는 플레이어 턴당 몇 칸인가 — 1 이면 절대 못 떨쳐낸다.
    hf=높이계수 wr=가로/세로 비 lift=바닥(0)에서 천장(1) 사이 어디에 뜨는가 */
 var MOBT={
-  rat: { n:"쥐",  art:RAT_ART, aw:13, ah:9, hf:0.34, wr:1.35, lift:0.02,
+  rat: { n:"쥐",  art:RAT_ART, aw:13, ah:9, hf:0.251, wr:1.35, lift:0.02,
          speed:0.5, sight:8, forget:6, sway:0.4,  bob:0.00, chase:1, hp:6, dmg:2 },
-  bat: { n:"박쥐", art:BAT_ART, aw:13, ah:7, hf:0.26, wr:2.10, lift:0.52,
+  bat: { n:"박쥐", art:BAT_ART, aw:13, ah:7, hf:0.192, wr:2.10, lift:0.52,
          speed:0.9, sight:5, forget:2, sway:2.2,  bob:0.55, chase:0, hp:3, dmg:0 }
 };
 var SWORD_DMG=4, PHP_MAX=20;
@@ -253,7 +253,7 @@ var EQUIP=[
 ];
 /* 등불은 시야를 넓힌다. 이 게임에서 불이 곧 볼 수 있는 거리라는 규칙을
    손에 든 물건으로 옮긴 것 */
-var VIEW_BASE=14, LANTERN_MUL=1.75, lanternOn=false;
+var VIEW_BASE=16, LANTERN_MUL=1.90, lanternOn=false;
 var showEquip=true, walkPhase=0;
 var ANIM={name:"", t:0, dur:0};        // 한 번에 하나만
 
@@ -280,7 +280,10 @@ function equipPose(Q){
   return p;
 }
 
-var FOV=Math.PI/3, VIEW=14, WALLH=1.55;
+/* WALLH 은 "칸 폭 1 에 대해 벽이 얼마나 높은가" 를 정한다.
+   1.55 였을 때 실제 높이는 0.90 유닛 — 폭보다 낮아 기어다니는 굴 비율이었고,
+   그래서 모든 것이 얼굴에 붙어 보였다. 2.10 이면 1.22 로 복도다운 비율이 된다 */
+var FOV=Math.PI/3, VIEW=16, WALLH=2.10;
 var W=132, H=44, MAXW=150, MAXH=50;
 
 var TAU=Math.PI*2;
@@ -327,6 +330,10 @@ var EDGE_NS=["█","█","▓","▒","·"], EDGE_EW=["▓","▓","▒","░","·
 var DOORF   =["█","▓","▒","░","·"];      // 문짝
 var FLOOR  =[".",".","·"," "," "];       // 바닥은 한 글자. 잡티를 없앤다
 var FJOINT =["-","-",".","·"," "];       // 칸 경계선 — 격자가 보여야 지도가 읽힌다
+/* 천장을 비워 두면 깊이 단서가 바닥 하나뿐이라 공간이 얕아 보인다.
+   바닥과 같은 격자선을 대칭으로 그어 위아래 양쪽에서 소실점으로 모이게 한다 */
+var CEIL   =["'","'","·"," "," "];
+var CJOINT =["-","-","·"," "," "];
 var DOOR_L=0.14, DOOR_R=0.86, LINTEL=0.13;
 
 function render(px,py,hd){
@@ -343,18 +350,22 @@ function render(px,py,hd){
     var ang=hd+(c/W-0.5)*FOV;
     ca[c]=Math.cos(ang); sa[c]=Math.sin(ang); cf[c]=Math.cos(ang-hd);   // 어안 보정
   }
-  /* 바닥만 그린다. 천장은 비워 둔다 — 잔점이 흩어지면 화면이 지저분해진다.
-     칸 경계선만 그어 격자가 눈에 보이게 한다 */
+  /* 바닥과 천장 — 행이 거리를 정하고 열이 방향을 정한다.
+     칸 경계선을 그어 격자가 눈에 보이게 하고, 위아래 대칭으로 그려
+     선이 소실점으로 모이는 것이 깊이 단서가 되게 한다 */
   for(var row=hz+1;row<H;row++){
     var d=(H*WALLH*0.5)/(row-hz); if(d>VIEW) continue;
-    var L=lvl(d);
+    var L=lvl(d), Lc=Math.min(4,L+1);          // 천장은 한 단계 어둡게
     var e=Math.min(0.11, 0.06*d/6+0.012);      // 멀수록 선이 뭉치므로 가늘게
+    var mir=hz-(row-hz);
     for(c=0;c<W;c++){
       var wx=px+ca[c]*d, wy=py+sa[c]*d;
       if(!walk(at(wy|0, wx|0))) continue;
       var fx=wx-Math.floor(wx), fy=wy-Math.floor(wy);
-      buf[row][c]= (fx<e||fx>1-e||fy<e||fy>1-e) ? FJOINT[L] : FLOOR[L];
+      var joint=(fx<e||fx>1-e||fy<e||fy>1-e);
+      buf[row][c]= joint ? FJOINT[L] : FLOOR[L];
       lv[row][c]=L;
+      if(mir>=0){ buf[mir][c]= joint ? CJOINT[Lc] : CEIL[Lc]; lv[mir][c]=Lc; }
     }
   }
 
