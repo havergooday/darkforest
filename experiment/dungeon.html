@@ -24,10 +24,21 @@ h1{font-size:11px;font-weight:400;letter-spacing:.28em;color:var(--dim);margin:0
 .hud .on{color:var(--ember)}
 .hud .hpv{letter-spacing:-1px}
 .cols{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start;margin-top:6px}
-#map{font-size:12px;line-height:1.15;color:var(--faint);white-space:pre;margin:0;letter-spacing:1px}
-#map .me{color:var(--frost)}
-#map .fea{color:var(--ember)}
-#map .mob{color:#c25b53}
+/* 지도는 글자 흐름이 아니라 고정 격자다. 예전엔 white-space:pre 로 흘렸는데,
+   화살표(U+25B6 등)가 모노스페이스 폭이 아니라서 좌우를 볼 때만 그 행이 밀렸다.
+   칸이 상자면 어떤 글자가 들어와도 격자가 흔들리지 않는다.
+   덤으로 칸이 정사각이 된다 - 예전 8.2x13.8 은 평면도를 위아래로 늘려 놨었다 */
+#map{display:grid;grid-auto-rows:13px;margin:0;line-height:1;
+     background:#07080a;border:1px solid var(--line);padding:6px;border-radius:3px}
+#map i{display:flex;align-items:center;justify-content:center;overflow:hidden;
+       font-style:normal;font-size:10px;color:var(--faint)}
+#map i.w{background:#29323c}          /* 벽 - 글자가 아니라 칸을 채운다 */
+#map i.f{color:#6b7885}               /* 밟은 바닥 */
+#map i.g{color:#333c46}               /* 곁눈으로 본 바닥 */
+#map i.o{color:#c8a877}               /* 문 */
+#map i.x{color:var(--ember)}          /* 지형지물 */
+#map i.b{color:#c25b53}               /* 생물 */
+#map i.p{color:var(--frost);font-size:11px}
 #log{flex:1;min-width:260px;font-size:12.5px;line-height:2;color:var(--dim);
      border-left:1px solid var(--line);padding-left:16px;min-height:96px}
 #log div:last-child{color:#dbe4ec}
@@ -57,6 +68,7 @@ input[type=range]{accent-color:var(--ember);width:180px}
 <span id="probe"></span>
 <pre id="view"></pre>
 <div class="hud">
+  <span><b>층</b> <span id="floor" class="on"></span></span>
   <span><b>칸</b> <span id="cell"></span></span>
   <span><b>방위</b> <span id="dir" class="on"></span></span>
   <span><b>턴</b> <span id="turns">0</span></span>
@@ -86,17 +98,19 @@ input[type=range]{accent-color:var(--ember);width:180px}
       <button id="bMap">지도 켜짐</button>
       <button id="bAll">전체 공개</button>
       <button id="bGear">장비 보임</button>
+      <button id="bDown">계단 이용</button>
       <button id="bReset">입구로</button>
     </div>
     <div class="row">
-      <label>시야 <span id="vnum">16</span></label>
-      <input id="vslide" type="range" min="4" max="30" step="1" value="16">
+      <label>시야 <span id="vnum">6</span></label>
+      <input id="vslide" type="range" min="3" max="30" step="1" value="6">
     </div>
   </div>
 </div>
 <div class="keys">
   <kbd>W</kbd><kbd>S</kbd> 전진·후진 · <kbd>A</kbd><kbd>D</kbd> 좌향·우향 ·
-  <kbd>Space</kbd> 휘두르기 · <kbd>Shift</kbd> 등불 · <kbd>M</kbd> 지도
+  <kbd>Space</kbd> 휘두르기 · <kbd>Shift</kbd> 등불 · <kbd>M</kbd> 지도 ·
+  <kbd>Enter</kbd> 계단 오르내리기
 </div>
 </div>
 <script>
@@ -107,7 +121,7 @@ input[type=range]{accent-color:var(--ember);width:180px}
 /* 24×24 성 지하. 아홉 개 방을 복도로 잇되 몇 군데를 막아 미로로 만들었다.
    G-H 와 H-I 가 막혀 있어 입구에서 계단까지 크게 돌아가야 한다.
    연결성은 만들 때 확인했다 — 통행 가능 232칸 전부 도달, 최단 24칸. */
-var MAP=[
+var MAP1=[
   "########################",
   "#.#.#.###.....###...####",
   "#.#.#.###.#o#.###...####",
@@ -127,20 +141,50 @@ var MAP=[
   "###.#######.#######.####",
   "#.....###.....###.....##",
   "#.....###.....###.....##",
-  "#..!..###..<..###..>..##",
+  "#..!..###<....###....>##",
   "#.....###.....###.....##",
   "#.....###.....###.....##",
   "########################",
   "########################"
 ];
-var N=MAP.length;
+
+/* 지하 2층 — 1층이 3x3 격자라면 여기는 좁은 통로가 얽힌 묘소다.
+   통행칸 204개가 모두 올라가는 계단에서 닿는 것을 확인했다 */
+var MAP2=[
+  "########################",
+  "########################",
+  "##....##########....####",
+  "##.##.##########.#..####",
+  "##.##.....+.....##.#####",
+  "##.#####.###.####..#####",
+  "##.....#.###.#.....#####",
+  "#####..#.....#..########",
+  "#####..+..o..+..########",
+  "#####..#.....#..########",
+  "##.....#.###.#.....#####",
+  "##.#####.###.####..#####",
+  "##....!...+.....##.#####",
+  "##.##.##########.##.####",
+  "##.##.##########....####",
+  "##.....................#",
+  "######.####.####.#######",
+  "######.####.####.#######",
+  "##....+....+....+.....##",
+  "##<...#....#....#..~..##",
+  "##....#.##.#.##.#.....##",
+  "##....#.##.#.##.#.....##",
+  "########################",
+  "########################"
+];
+var MAP=MAP1;                 // 지금 층. useFloor() 가 갈아 끼운다
+var N=MAP1.length;
 
 /* 특징 타일 — 바닥이되 눈에 띄는 것. 스프라이트로 세워 그린다 */
 /* 램프가 일찍 점으로 바래면 바닥과 구별되지 않는다.
    탐험 게임에서 계단을 멀리서 못 알아보는 것은 치명적이므로 형태를 오래 붙든다 */
 var FEAT={
-  "<":{n:"올라가는 계단", ramp:["=","=","=","-","·"], h:0.406, w:0.458, lift:0.10},
-  ">":{n:"내려가는 계단", ramp:["=","=","=","-","·"], h:0.295, w:0.458, lift:-0.06},
+  "<":{n:"올라가는 계단", wall:true},   // 내려가는 계단과 같이 벽 아치로 그린다
+  ">":{n:"내려가는 계단", wall:true},   // 벽에 붙는다 — 바닥 타일은 서는 자리일 뿐
   "!":{n:"비문",         ramp:["I","I","!","!",":"], h:0.701, w:0.074, lift:0.28},
   "o":{n:"잔해",         ramp:["O","O","o","o","·"], h:0.221, w:0.251, lift:-0.02},
   "~":{n:"우물",         ramp:["U","U","u","u","·"], h:0.251, w:0.369, lift:-0.05}
@@ -190,7 +234,9 @@ var MOBT={
 };
 var SWORD_DMG=4, PHP_MAX=20;
 var php=PHP_MAX, shakeT=0;
-var BASE_MOBS=[ {t:"bat", hr:11, hc:11}, {t:"rat", hr:3, hc:11} ];
+var BASE1=[ {t:"bat", hr:11, hc:11}, {t:"rat", hr:3, hc:11} ];
+var BASE2=[ {t:"rat", hr:8, hc:10}, {t:"rat", hr:15, hc:12}, {t:"bat", hr:19, hc:19} ];
+var BASE_MOBS=BASE1;
 var MOBS=BASE_MOBS.map(function(m){ return {t:m.t,r:m.hr,c:m.hc,hr:m.hr,hc:m.hc,
   acc:0,awake:false,lost:0,said:0,flee:0,hp:MOBT[m.t].hp}; });
 
@@ -253,7 +299,10 @@ var EQUIP=[
 ];
 /* 등불은 시야를 넓힌다. 이 게임에서 불이 곧 볼 수 있는 거리라는 규칙을
    손에 든 물건으로 옮긴 것 */
-var VIEW_BASE=16, LANTERN_MUL=1.90, lanternOn=false;
+/* 시야 16 은 너무 밝았다. 어둠(4단계)이 12.8칸 밖부터라 방 하나가 통째로
+   최고 밝기여서 깊이가 뭉갰다. 6 이면 4.8칸 밖이 어둠이라 방이 다 안 들어오고,
+   면마다 밝기가 갈려 형태가 오히려 잘 읽힌다. 켜면 6*2.7 = 16.2 로 예전 밝기다 */
+var VIEW_BASE=6, LANTERN_MUL=2.70, lanternOn=false;
 var showEquip=true, walkPhase=0;
 var ANIM={name:"", t:0, dur:0};        // 한 번에 하나만
 
@@ -283,7 +332,7 @@ function equipPose(Q){
 /* WALLH 은 "칸 폭 1 에 대해 벽이 얼마나 높은가" 를 정한다.
    1.55 였을 때 실제 높이는 0.90 유닛 — 폭보다 낮아 기어다니는 굴 비율이었고,
    그래서 모든 것이 얼굴에 붙어 보였다. 2.10 이면 1.22 로 복도다운 비율이 된다 */
-var FOV=Math.PI/3, VIEW=16, WALLH=2.10;
+var FOV=Math.PI/3, VIEW=6, WALLH=2.10;
 var W=132, H=44, MAXW=150, MAXH=50;
 
 var TAU=Math.PI*2;
@@ -316,10 +365,13 @@ function hash(a,b){var h=(a*374761393+b*668265263)>>>0;h=(h^(h>>13))*1274126177>
 /* 문은 다가가면 열린다. 0=닫힘 1=활짝.
    열리면 시야를 막지 않으므로 그제야 너머가 보인다 — 문이 의미를 갖는 지점이다 */
 var DOORS=[], DT={};
-(function(){
+/* 문 목록은 지도에서 뽑는다 — 층을 갈아 끼울 때마다 다시 뽑아야 한다 */
+function scanDoors(){
+  DOORS=[]; DT={};
   for(var r=0;r<N;r++) for(var c=0;c<N;c++)
     if(MAP[r][c]==="+"){ DOORS.push({r:r,c:c,k:r*64+c}); DT[r*64+c]=0; }
-})();
+}
+scanDoors();
 function doorT(r,c){ var v=DT[r*64+c]; return v===undefined?0:v; }
 
 /* 두 칸 사이가 트여 있는가. 닫힌 문도 막는다 */
@@ -348,6 +400,7 @@ var FJOINT =["-","-",".","·"," "];       // 칸 경계선 — 격자가 보여�
    바닥과 같은 격자선을 대칭으로 그어 위아래 양쪽에서 소실점으로 모이게 한다 */
 var CEIL   =["'","'","·"," "," "];
 var CJOINT =["-","-","·"," "," "];
+
 var DOOR_L=0.14, DOOR_R=0.86, LINTEL=0.13;
 
 /* 벽 장식.
@@ -356,6 +409,44 @@ var DOOR_L=0.14, DOOR_R=0.86, LINTEL=0.13;
    "횃불 있던 벽" 이 기억의 닻이 되어 길찾기를 돕는다. 그래서 성기게 둔다.
    F 는 불꽃, 공백은 투명(벽이 비쳐 보임). u·v 는 벽면 위의 상자 */
 var DEC_ART={
+  /* 내려가는 계단. 바닥에 세운 빌보드로도, 바닥 평면에 새겨도 안 됐다 —
+     하나는 판때기로 읽히고 하나는 다가가면 사라졌다. 벽에 붙이면 둘 다 없다:
+     벽면 좌표에 그리므로 원근이 정확하고, 다가갈수록 벽과 함께 커진다.
+     V 는 구멍의 어둠이다 — 공백은 벽이 비쳐 보이므로 어둠을 만들 수 없다 */
+  stair: { pal:0, u0:0.04,u1:0.96, v0:0.06,v1:1.00, w:19, h:15, art:[
+    "      █▓░V░▓█      ",
+    "    █▓░VVVVV░▓█    ",
+    "   █▓░VVVVVVV░▓█   ",
+    "  █▓░VVVVVVVVV░▓█  ",
+    " █▓░VVVVVVVVVVV░▓█ ",
+    " █▓░VVVVVVVVVVV░▓█ ",
+    " █▓░VVVVVVVVVVV░▓█ ",
+    " █▓░VVVVVVVVVVV░▓█ ",
+    " █▓░VVVVVVVVVVV░▓█ ",
+    " █▓░VVVVVVVVVVV░▓█ ",
+    " █▓░VV·······VV░▓█ ",
+    " █▓░VVVVVVVVVVV░▓█ ",
+    " █▓░V░░░░░░░░░V░▓█ ",
+    " █▓░VVVVVVVVVVV░▓█ ",
+    " █▓░▒▒▒▒▒▒▒▒▒▒▒░▓█ "
+  ]},
+  stairUp: { pal:0, u0:0.04,u1:0.96, v0:0.06,v1:1.00, w:19, h:15, art:[
+    "      █▓░V░▓█      ",
+    "    █▓░VVVVV░▓█    ",
+    "   █▓░VVVVVVV░▓█   ",
+    "  █▓░VVVVVVVVV░▓█  ",
+    " █▓░VVVVVVVVVVV░▓█ ",
+    " █▓░VVVVVVVVVVV░▓█ ",
+    " █▓░VVVVVVVVVVV░▓█ ",
+    " █▓░VVVVVVVVVVV░▓█ ",
+    " █▓░VVVVVVVVVVV░▓█ ",
+    " █▓░VVVVVVVVVVV░▓█ ",
+    " █▓░VV·······VV░▓█ ",
+    " █▓░VVVVVVVVVVV░▓█ ",
+    " █▓░V░░░░░░░░░V░▓█ ",
+    " █▓░VVVVVVVVVVV░▓█ ",
+    " █▓░▒▒▒▒▒▒▒▒▒▒▒░▓█ "
+  ]},
   torch: { pal:10, u0:0.36,u1:0.64, v0:0.16,v1:0.60, w:5, h:7, art:[
     "  F  ",
     " FFF ",
@@ -368,16 +459,31 @@ var DEC_ART={
 
 /* 어느 벽의 어느 면인가 — "행,열,면" (면 0=북 1=동 2=남 3=서).
    방마다 다른 것을 두어 어디에 있는지 알 수 있게 한다 */
-var DEC={};
+var DEC1={}, DEC2={}, DEC=DEC1;
 (function(){
-  var put=function(r,c,face){ DEC[(r*64+c)*4+face]="torch"; };
+  var D=DEC1;
+  var put=function(r,c,face){ D[(r*64+c)*4+face]="torch"; };
   /* 횃불은 불꽃이 위쪽에 있어, 볼 수 있는 자리가 코앞 한 칸뿐이면 잘린다.
      두 칸 이상 물러설 수 있는 벽에만 건다 (기둥 사이는 안 된다) */
-  put(22,11,0);  put(19,8,1);    // H 입구
+  put(22,11,0);  put(17,8,1);    // H 입구 — (19,8) 은 계단 아치에 내주었다
   put(9,8,1);    put(13,14,3);   // E 큰 홀
   put(0,11,2);                   // B 기둥 홀
   put(11,0,1);                   // D 우물 방
-  put(19,22,3);  put(16,17,2);   // I 계단 방
+  put(16,17,2);  put(22,19,0);   // I 계단 방
+  /* 계단 칸이 마주 보는 벽면. 벽면 하나에 장식 하나라, 여기 있던 횃불은
+     조용히 밀려난다 — 그래서 미리 비켜 두었다 */
+  D[(19*64+22)*4+3]="stair";      // 내려가는 계단 (19,21) 앞
+  D[(19*64+8)*4+1]="stairUp";     // 올라가는 계단 (19,9) 앞
+
+  /* 지하 2층. 좌표를 손으로 세다가 넷이나 벽이 아닌 칸에 붙었다 — 벽면이고,
+     볼 자리가 있고, 두 칸 물러설 여지가 있는 곳을 코드로 골라 왔다 */
+  D=DEC2;
+  put(1,2,2);   put(1,16,2);     // 위쪽 두 방
+  put(6,7,3);   put(9,13,1);     // 가운데 십자 통로
+  put(10,1,1);  put(12,19,2);    // 서쪽 통로 · 동쪽 통로
+  put(22,3,0);  put(22,19,0);    // 아래 두 방
+  /* 올라가는 계단 칸(19,2) 이 마주 보는 벽면 */
+  D[(19*64+1)*4+1]="stairUp";     // 올라가는 계단 (19,2) 앞
 })();
 
 function render(px,py,hd){
@@ -404,7 +510,8 @@ function render(px,py,hd){
     var mir=hz-(row-hz);
     for(c=0;c<W;c++){
       var wx=px+ca[c]*d, wy=py+sa[c]*d;
-      if(!walk(at(wy|0, wx|0))) continue;
+      var fch=at(wy|0, wx|0);
+      if(!walk(fch)) continue;
       var fx=wx-Math.floor(wx), fy=wy-Math.floor(wy);
       var joint=(fx<e||fx>1-e||fy<e||fy>1-e);
       buf[row][c]= joint ? FJOINT[L] : FLOOR[L];
@@ -477,6 +584,8 @@ function render(px,py,hd){
         if(decCh==="F"){
           var ff=(Math.sin(tSec*11.3+wK[c])+Math.sin(tSec*23.7)*0.6);
           ch=FLAME[Math.min(4,(ff>0.6?0:ff>-0.2?1:2)+L2)]; cls=60;
+        } else if(decCh==="V"){
+          ch=" "; cls=4;                       // 구멍의 어둠. 공백은 벽이 비쳐 안 된다
         } else {
           var dd4=DENS[decCh]; if(dd4===undefined) dd4=2;
           ch=MRAMP[Math.min(4,dd4+L2)]; cls=Dk.pal + Math.min(4,L2);
@@ -500,7 +609,7 @@ function render(px,py,hd){
   /* 특징 타일 — 벽 뒤에 있으면 가려진다 (열별 벽 거리로 z 판정) */
   var sp=[];
   for(r=0;r<N;r++) for(c=0;c<N;c++){
-    var t=MAP[r][c]; if(!FEAT[t]) continue;
+    var t=MAP[r][c]; if(!FEAT[t] || FEAT[t].wall) continue;   // 벽에 붙는 것은 빼고
     var ox=c+0.5, oy=r+0.5, dx=ox-px, dy=oy-py;
     var dd=Math.sqrt(dx*dx+dy*dy); if(dd>VIEW||dd<0.30) continue;
     sp.push({t:t,d:dd,dx:dx,dy:dy});
@@ -681,19 +790,92 @@ window.addEventListener("orientationchange",fit);
 /* ── 상태 · 이동 ─────────────────────────────────────────────
    위저드리 방식. 한 칸 전진이 1턴, 90도 회전이 1턴.
    벽 검사 한 줄이 곧 충돌 판정이다 — 원-원 반지름을 맞출 일이 없다. */
-var START={r:19,c:11};
+/* 층마다 지도·장식·생물·발자국을 따로 지닌다. 한 곳만 갈아 끼우면
+   나머지 코드는 지금 층만 보면 된다 */
+var FLOORS=[
+  { name:"지하 1층", map:MAP1, dec:DEC1, base:BASE1, seen:{}, mobs:null, start:{r:19,c:9} },
+  { name:"지하 2층", map:MAP2, dec:DEC2, base:BASE2, seen:{}, mobs:null, start:{r:19,c:2} }
+];
+var fl=0;
+var START=FLOORS[0].start;
+
+function spawn(base){
+  return base.map(function(m){ return {t:m.t,r:m.hr,c:m.hc,hr:m.hr,hc:m.hc,
+    acc:0,awake:false,lost:0,said:0,flee:0,hp:MOBT[m.t].hp}; });
+}
+
+function useFloor(i){
+  fl=i;
+  var F=FLOORS[i];
+  if(!F.mobs) F.mobs=spawn(F.base);
+  MAP=F.map; DEC=F.dec; visited=F.seen; MOBS=F.mobs;
+  BASE_MOBS=F.base; START=F.start;
+  scanDoors();                               // 문 목록도 층마다 다시 뽑는다
+  mapSig=""; cellSt=[];                      // 지도를 처음부터 다시 그린다
+}
 var cr=START.r, cc=START.c, face=0;                 // 0동 1남 2서 3북
 var px=cc+0.5, py=cr+0.5, hd=0, tx=px, ty=py, thd=0;
 var DIR=[[0,1],[1,0],[0,-1],[-1,0]], DIRN=["동","남","서","북"];
+
+/* 지도 칸은 한 번만 만들고, 매 프레임 달라진 칸만 고쳐 쓴다.
+   576개를 프레임마다 다시 그리면 DOM 이 곧 비용이 된다 */
+var mapCells=[], cellSt=[], mapSig="";
+function buildMap(){
+  var host=document.getElementById("map"), s="";
+  for(var i=0;i<N*N;i++) s+="<i></i>";
+  host.innerHTML=s;
+  host.style.gridTemplateColumns="repeat("+N+",13px)";
+  mapCells=document.querySelectorAll("#map i");
+  cellSt=[]; mapSig="";
+}
+
+function paintMap(){
+  var host=document.getElementById("map");
+  host.style.display = showMap ? "grid" : "none";
+  if(!showMap || !mapCells.length) return;
+  /* 지도는 턴에서만 바뀌는데 loop 는 매 프레임 돈다. 576칸을 훑기 전에
+     달라진 게 있는지부터 본다 — 문자열 몇 개면 끝난다 */
+  var sig=cr+","+cc+","+face+","+turns+","+revealAll;
+  for(var q=0;q<MOBS.length;q++)
+    sig+="|"+MOBS[q].r+","+MOBS[q].c+","+(MOBS[q].awake?1:0);
+  if(sig===mapSig) return;
+  mapSig=sig;
+  for(var r=0;r<N;r++) for(var c=0;c<N;c++){
+    var i=r*N+c, cls="u", ch="";
+    if(r===cr && c===cc){ cls="p"; ch=ARROW[face]; }
+    else {
+      var v=visited[r+","+c];
+      if(revealAll || v){
+        var mob=null;
+        for(var j=0;j<MOBS.length;j++)
+          if(MOBS[j].awake && MOBS[j].r===r && MOBS[j].c===c){ mob=MOBS[j]; break; }
+        var t=MAP[r][c];
+        if(mob && v){ cls="b"; ch=(mob.t==="bat"?"b":"r"); }
+        else if(t==="#"){ cls="w"; }
+        else if(t==="+"){ cls="o"; ch="+"; }
+        else if(FEAT[t]){ cls="x"; ch=t; }
+        else { cls=(v===1?"f":"g"); ch="·"; }
+      }
+    }
+    var st=cls+ch;
+    if(cellSt[i]===st) continue;
+    cellSt[i]=st;
+    mapCells[i].className=cls;
+    mapCells[i].textContent=ch;
+  }
+}
 var ARROW=["▶","▼","◀","▲"];
-var visited={}, turns=0, showMap=true, revealAll=false, logs=[];
+var visited=FLOORS[0].seen, turns=0, showMap=true, revealAll=false, logs=[];
 
 function say(t){ logs.push(t); if(logs.length>5) logs.shift();
   document.getElementById("log").innerHTML=logs.map(function(l){return "<div>› "+l+"</div>";}).join(""); }
 
 function mark(){
   var k=cr+","+cc;
-  if(!visited[k]){
+  /* 1 은 밟은 칸, 2 는 곁눈으로 본 칸. 앞 칸은 늘 곁눈질로 먼저 2 가 되므로
+     !visited[k] 로 걸면 그 칸은 영영 1 이 되지 못한다 — 밟은 칸 수도,
+     지형지물 발견 알림도 시작 칸 말고는 뜨지 않았다 */
+  if(visited[k]!==1){
     visited[k]=1;
     var t=MAP[cr][cc];
     if(FEAT[t]) say(FEAT[t].n + "이(가) 있다.");
@@ -724,8 +906,9 @@ function turn(s){ face=(face+s+4)%4; thd=face*Math.PI/2; turns++; mobTurn(); }
    지도도 잡은 것도 그대로다. 되돌아가는 걸음이 곧 대가다 */
 function collapse(){
   php=PHP_MAX; shakeT=1;
-  cr=START.r; cc=START.c; face=0;
-  px=tx=cc+0.5; py=ty=cr+0.5; hd=thd=0;
+  useFloor(0);                               // 쓰러지면 입구 층으로 돌아온다
+  cr=START.r; cc=START.c; face=faceAwayFromArch(cr,cc);
+  px=tx=cc+0.5; py=ty=cr+0.5; hd=thd=face*Math.PI/2;
   for(var i=0;i<MOBS.length;i++){ MOBS[i].awake=false; MOBS[i].lost=0; MOBS[i].flee=0; }
   say("정신을 잃었다. 입구에서 깨어난다.");
 }
@@ -833,12 +1016,13 @@ function mobTurn(){
 }
 
 function reset(){
-  cr=START.r; cc=START.c; face=0;
-  px=tx=cc+0.5; py=ty=cr+0.5; hd=thd=0;
-  turns=0; visited={}; logs=[]; revealAll=false;
-  php=PHP_MAX; shakeT=0; lanternOn=false; ANIM.name=""; ANIM.t=0;
-  MOBS=BASE_MOBS.map(function(m){ return {t:m.t,r:m.hr,c:m.hc,hr:m.hr,hc:m.hc,
-    acc:0,awake:false,lost:0,said:0,flee:0,hp:MOBT[m.t].hp}; });
+  /* 모든 층을 처음으로 되돌린다 — 발자국도 생물도 층마다 따로 있다 */
+  for(var i=0;i<FLOORS.length;i++){ FLOORS[i].seen={}; FLOORS[i].mobs=spawn(FLOORS[i].base); }
+  useFloor(0);
+  cr=START.r; cc=START.c; face=faceAwayFromArch(cr,cc);
+  px=tx=cc+0.5; py=ty=cr+0.5; hd=thd=face*Math.PI/2;
+  turns=0; logs=[]; revealAll=false;
+  php=PHP_MAX; shakeT=0; lanternOn=false; ANIM.name=""; ANIM.t=0; DESC=null;
 
   document.getElementById("bAll").textContent="전체 공개";
   say("성의 지하다. 등 뒤로 올라가는 계단이 있다.");
@@ -852,7 +1036,9 @@ function act(k){
   else if(k==="a") turn(-1); else if(k==="d") turn(1);
 }
 document.addEventListener("keydown",function(e){
+  if(DESC) return;                                   // 내려가는 동안은 조작을 막는다
   var k=e.key.toLowerCase();
+  if(k==="enter"){ e.preventDefault(); useStairs(); return; }
   if(k==="m"){ showMap=!showMap; return; }
   if(KMAP[k]){ e.preventDefault(); k=KMAP[k]; }
   if("wsad".indexOf(k)>=0){ e.preventDefault(); act(k); }
@@ -866,6 +1052,7 @@ document.getElementById("bMap").addEventListener("click",function(){
   showMap=!showMap; this.textContent=showMap?"지도 켜짐":"지도 꺼짐"; });
 document.getElementById("bAll").addEventListener("click",function(){
   revealAll=!revealAll; this.textContent=revealAll?"밟은 곳만":"전체 공개"; });
+document.getElementById("bDown").addEventListener("click",useStairs);
 document.getElementById("bReset").addEventListener("click",reset);
 document.getElementById("bSwing").addEventListener("pointerdown",function(e){
   e.preventDefault(); swing(); });
@@ -877,11 +1064,172 @@ var vslide=document.getElementById("vslide");
 vslide.addEventListener("input",function(){
   VIEW_BASE=+vslide.value; document.getElementById("vnum").textContent=VIEW_BASE; });
 
-/* ── 루프 ────────────────────────────────────────────────── */
+/* ── 계단 연출 ──
+   전체 암전 뒤, 어둠 속에 그리스식 기둥이 서 있고 작은 불빛 하나가 계단을 따라
+   지나간다. 내려갈 때는 왼쪽 위에서 오른쪽 아래로, 올라갈 때는 그 반대로.
+   기둥이 불빛을 가리므로 지날 때마다 가려졌다 드러난다.
+   render 와 무관하게 격자를 새로 짜므로 미로 렌더러를 건드리지 않는다.
+   숫자는 experiment/cine.html 작업대에서 맞춘 값이다 */
+var DESC=null, DESC_DUR=6.0;
+var CRAMP=["█","▓","▒","░","·"];
+var CINE = {
+  ncol:3,        // 기둥 수
+  thick:8.0,     // 기둥 반폭 (화면 칸)
+  dcol:1.0,      // 기둥 깊이
+  rw:0.32,       // 불빛 크기 (세계 단위)
+  dl:1.8,        // 불빛 깊이 — 기둥보다 커야 뒤로 지나간다
+  lh:0.40,       // 불빛 높이 (바닥에서)
+  tilt:0.70,     // 지평선 자리
+  flute:4,       // 기둥 세로 홈
+  steps:9,       // 계단 수
+  sTop:0.30,     // 왼쪽 끝 지면 (화면 높이 비율)
+  sBot:0.92      // 오른쪽 끝 지면
+};
+
+function cineFrame(t, dir){
+  var P=CINE, buf=[], lv=[], r, c;
+  for(r=0;r<H;r++){ buf.push(new Array(W).fill(" ")); lv.push(new Array(W).fill(10)); }
+  var fade = t<0.16 ? t/0.16 : t>0.84 ? (1-t)/0.16 : 1;
+  /* dark>=4 로 걸면 양 끝이 어긋난다 — (1-0.98)/0.16 이 부동소수점 탓에
+     3.4999… 가 되어 3 으로 내려앉고, 끝쪽만 완전히 검어지지 않았다.
+     밝기로 바로 거르면 양쪽이 같다 */
+  if(fade <= 0.13) return emit(buf,lv);       // 완전 암전
+  var dark = Math.min(3, Math.round((1-fade)*4));
+
+  var hz = Math.round(H*(1-P.tilt));
+  var FD = Math.max(1, H-1-hz);               // 맨 아랫줄이 깊이 1 이 되게
+  var KX = 2.2/W;                             // 깊이 1 에서 화면 폭이 세계 2.2
+
+  var span = P.dl*KX*W*0.62;
+  var pr = t<0.14 ? 0 : t>0.86 ? 1 : (t-0.14)/0.72;
+  var LWX = (-span + 2*span*pr) * (dir>0 ? 1 : -1);
+  var lsc = W*0.5 + LWX/(P.dl*KX);            // 불빛의 화면 열
+
+  /* 지면이 왼쪽 위에서 오른쪽 아래로 한 단씩 내려간다. 열마다 지평선을 내려 주면
+     원근을 따로 손대지 않고도 내려가는 계단이 된다. 불빛이 그 위를 딛는다 */
+  var lightBase = hz + FD/P.dl;
+  var drop = function(x){
+    var k = P.steps<=0 ? x/W : Math.floor(x/W*P.steps)/Math.max(1,P.steps-1);
+    if(k>1) k=1;
+    return (H*P.sTop + (H*P.sBot - H*P.sTop)*k) - lightBase;
+  };
+  var lsr = hz + drop(lsc) + FD/P.dl;
+
+  /* 바닥 — 1/깊이로 눕는다. 같은 빛무리라도 가까울수록 넓게 퍼진다 */
+  for(c=0;c<W;c++){
+    var hzc = hz + drop(c);                   // 이 열의 지면 (소수)
+    for(r=Math.max(0,Math.floor(hzc)+1); r<H; r++){
+      var dz = FD/(r-hzc);
+      var wx = (c-W*0.5)*dz*KX;
+      var ddx = wx-LWX, ddz = dz-P.dl;
+      var d3 = Math.sqrt(ddx*ddx + ddz*ddz + P.lh*P.lh);
+      var L = Math.round(d3/P.rw) + dark;
+      var fz = dz*2-Math.floor(dz*2), fx = wx*2-Math.floor(wx*2);
+      if(fz<0.12 || fx<0.07) L += 1;          // 바닥 눈금 — 깊이가 눈에 보이게
+      if(L<4){ buf[r][c]=CRAMP[L]; lv[r][c]=10+L; }
+    }
+  }
+
+  /* 불빛 자체 — 기둥보다 먼저 그려야 가려진다 */
+  var airR = Math.max(2, P.rw/(P.dl*KX)*0.5);
+  for(r=0;r<H;r++) for(c=0;c<W;c++){
+    var sx=(c-lsc), sy=(r-lsr)*2.0;
+    var SL=Math.round(Math.sqrt(sx*sx+sy*sy)/(airR*0.55))+dark;
+    if(SL<4 && SL<(lv[r][c]-10)){ buf[r][c]=CRAMP[SL]; lv[r][c]=10+SL; }
+  }
+
+  /* 기둥 — 위아래로 꽉 찬다. 빛을 등지므로 차가운 돌색이고,
+     빛이 번진 모서리만 따뜻하다. 그 갈림이 "창살 너머"를 만든다 */
+  var halfW = P.thick;
+  for(var i=0;i<P.ncol;i++){
+    var cx = W*(i+0.5)/P.ncol;
+    for(r=0;r<H;r++){
+      var half = Math.round(halfW);
+      for(c=Math.round(cx-half); c<=Math.round(cx+half); c++){
+        if(c<0||c>=W) continue;
+        var u=(c-(cx-half))/(2*half);
+        var LL=2+dark;
+        if(P.flute>0 && ((u*P.flute)%1) < 0.16) LL+=1;
+        var warm=false;
+        var eg=Math.min(c-(cx-half), (cx+half)-c);
+        if(eg<=1.2){
+          var ex=(c-lsc), ey=(r-lsr)*2.0;
+          var rim=Math.round(Math.sqrt(ex*ex+ey*ey)/3.0)+dark;
+          if(rim<LL){ LL=rim; warm=true; }
+        }
+        LL=Math.max(0,Math.min(4,LL));
+        buf[r][c]=CRAMP[LL]; lv[r][c] = warm ? 10+LL : LL;
+      }
+    }
+  }
+  return emit(buf,lv);
+}
+
+function emit(buf, lv){
+  var html="", r, c;
+  /* 10 이상은 불빛이 닿은 따뜻한 쪽(a), 그 아래는 차가운 돌(d) */
+  var wrap=function(v,run){
+    return "<span class=" + (v>=10 ? "a"+(v-10) : "d"+v) + ">" + run + "</span>";
+  };
+  for(r=0;r<H;r++){
+    var run="", cur=lv[r][0];
+    for(c=0;c<W;c++){
+      if(lv[r][c]!==cur){ html+=wrap(cur,run); run=""; cur=lv[r][c]; }
+      run+=buf[r][c];
+    }
+    html+=wrap(cur,run)+(r<H-1?"\n":"");
+  }
+  return html;
+}
+
+function useStairs(){
+  if(DESC) return;
+  var t=MAP[cr][cc];
+  if(t!==">" && t!=="<"){ say("여기엔 계단이 없다."); return; }
+  if(t===">" && fl>=FLOORS.length-1){ say("더 내려갈 곳이 없다."); return; }
+  if(t==="<" && fl===0){ say("지상으로 나가는 계단이다. 아직 오를 때가 아니다."); return; }
+  DESC={t:0, dir: t===">" ? 1 : -1};
+  say(t===">" ? "계단을 내려간다." : "계단을 올라간다.");
+}
+
+/* 계단에 도착하면 아치를 등지고 선다.
+   방금 올라온 계단을 마주 보고 서 있으면 "되돌아가라"로 읽힌다 — 나온 문을
+   등지는 것이 자연스럽다. 장식 면(0북 1동 2남 3서)을 방위(0동 1남 2서 3북)로 옮긴다 */
+function faceAwayFromArch(r, c){
+  var VF=[[-1,0],[0,1],[1,0],[0,-1]], TO=[3,0,1,2];
+  for(var f=0;f<4;f++){
+    var k=((r-VF[f][0])*64 + (c-VF[f][1]))*4 + f;
+    if(DEC[k]==="stair" || DEC[k]==="stairUp") return TO[f];
+  }
+  return face;
+}
+
+/* 내려가면 아래층의 올라가는 계단에, 올라가면 위층의 내려가는 계단에 선다.
+   두 계단이 서로를 마주 본다 — 되돌아오면 같은 자리다 */
+function arriveStairs(dir){
+  useFloor(fl + (dir>0 ? 1 : -1));
+  var want = dir>0 ? "<" : ">", f=null;
+  for(var r=0;r<N;r++) for(var c=0;c<N;c++) if(MAP[r][c]===want) f={r:r,c:c};
+  if(f){ cr=f.r; cc=f.c; }
+  face=faceAwayFromArch(cr,cc);
+  px=tx=cc+0.5; py=ty=cr+0.5; hd=thd=face*Math.PI/2;
+  turns++; mark();
+  say(FLOORS[fl].name + "에 닿았다.");
+}
+
+/* ── 루프 /* ── 루프 ────────────────────────────────────────────────── */
 var last=0, tSec=0;
 function loop(ts){
+  /* 안 보이는 창에서까지 매 프레임 화면을 다시 그릴 이유가 없다.
+     문자 격자는 DOM 이 곧 비용이다 */
+  if(document.hidden){ last=ts; requestAnimationFrame(loop); return; }
   var dt=Math.min(0.05,(ts-(last||ts))/1000); last=ts;
   tSec+=dt;                                        // 흔들림·숨·깜빡임에 쓰인다
+  if(DESC){
+    DESC.t += dt/DESC_DUR;
+    if(DESC.t>=1){ var d0=DESC.dir; DESC=null; arriveStairs(d0); }
+    else { view.innerHTML=cineFrame(DESC.t, DESC.dir); requestAnimationFrame(loop); return; }
+  }
   var k=1-Math.pow(0.0005,dt);                      // 지수 보간 — 칸 이동에 무게를 준다
   px+=(tx-px)*k; py+=(ty-py)*k;
   hd = wrapAng(hd + angDiff(thd,hd)*k);
@@ -895,6 +1243,7 @@ function loop(ts){
   doorTick(dt);
 
   view.innerHTML=render(px,py,hd);
+  document.getElementById("floor").textContent=FLOORS[fl].name;
   document.getElementById("cell").textContent=cr+","+cc+" ("+(NAME[MAP[cr][cc]]||"바닥")+")";
   document.getElementById("dir").textContent=DIRN[face];
   document.getElementById("turns").textContent=turns;
@@ -909,28 +1258,10 @@ function loop(ts){
   document.getElementById("gear").textContent=
     showEquip ? EQUIP.map(function(q){return q.n;}).join(" · ") : "없음";
 
-  var m="";
-  if(showMap){
-    var ICON={"#":"█","+":"+",".":"·"};
-    for(var r=0;r<N;r++){
-      for(var c=0;c<N;c++){
-        if(r===cr&&c===cc){ m+='<span class=me>'+ARROW[face]+'</span>'; continue; }
-        var mHere=null;
-        for(var mk=0;mk<MOBS.length;mk++)
-          if(MOBS[mk].awake && MOBS[mk].r===r && MOBS[mk].c===c) mHere=MOBS[mk];
-        if(mHere && visited[r+","+c]){
-          m+='<span class=mob>'+(mHere.t==="bat"?"b":"r")+'</span>'; continue; }
-        if(!revealAll && !visited[r+","+c]){ m+=" "; continue; }
-        var t=MAP[r][c];
-        if(FEAT[t]) m+='<span class=fea>'+t+'</span>';
-        else m+=ICON[t]||"·";
-      }
-      m+="\n";
-    }
-  }
-  document.getElementById("map").innerHTML=m;
+  paintMap();
   requestAnimationFrame(loop);
 }
+buildMap();
 reset();
 requestAnimationFrame(loop);
 </script></body></html>

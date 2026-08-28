@@ -1,0 +1,323 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>계단 연출 · 작업대</title>
+<style>
+:root{--bg:#0a0b0d;--dim:#7b8794;--faint:#3d4854;--line:#262f39;--ember:#e0813c}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:#cdd6de;-webkit-text-size-adjust:100%}
+body{font-family:ui-monospace,SFMono-Regular,Consolas,"D2Coding",monospace;padding:14px 12px 28px}
+.wrap{max-width:1680px;margin:0 auto}
+h1{font-size:11px;font-weight:400;letter-spacing:.28em;color:var(--dim);margin:0 0 4px;text-transform:uppercase}
+.sub{font-size:11.5px;color:var(--faint);margin:0 0 10px;line-height:1.6}
+.sub a{color:var(--dim)}
+#view{margin:0;line-height:1.0;white-space:pre;background:#050607;border:1px solid #1b232c;
+      padding:9px;border-radius:3px;overflow:hidden;font-family:inherit}
+#view div{line-height:1.0;height:1em}
+#probe{position:absolute;visibility:hidden;white-space:pre;left:-9999px;top:0;font-family:inherit}
+/* 불빛이 닿은 것 — 따뜻하다 */
+.a0{color:#f0dcb4}.a1{color:#c8a877}.a2{color:#957c53}.a3{color:#5f5036}.a4{color:#3a3122}
+/* 앞쪽 기둥 — 빛을 등져 차갑다. 따뜻한 장면과 갈려야 창살 너머로 읽힌다 */
+.d0{color:#cfd9e2}.d1{color:#93a3b3}.d2{color:#63788c}.d3{color:#41525f}.d4{color:#2a343d}
+.hud{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--dim);margin:9px 0}
+.hud b{font-weight:400;color:var(--faint)}
+.ctl{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px 22px;margin-top:12px}
+.ctl label{display:block;font-size:11.5px;color:var(--faint);margin-bottom:3px}
+.ctl label b{font-weight:400;color:var(--ember)}
+.ctl input[type=range]{width:100%;accent-color:#8b6f45}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+button{font:inherit;font-size:12px;background:#141a21;color:#cdd6de;border:1px solid var(--line);
+       border-radius:3px;padding:6px 14px;cursor:pointer}
+button:hover{border-color:#3b4855}
+.note{font-size:11.5px;color:var(--faint);line-height:1.9;margin:16px 0 0;
+      border-left:1px solid var(--line);padding-left:14px;max-width:820px}
+</style></head><body><div class="wrap">
+<h1>계단 연출 · 작업대</h1>
+<p class="sub">어둠 속에 기둥이 서 있고, 바닥을 스치는 불빛이 기둥 <b>뒤로</b> 지나간다.
+숫자를 맞춰 보는 곳이다 — 정해지면 <a href="dungeon.html">던전</a> 으로 옮긴다.</p>
+
+<pre id="view"></pre>
+<pre id="probe"></pre>
+
+<div class="hud">
+  <span><b>격자</b> <span id="grid"></span></span>
+  <span><b>때</b> <span id="tnum"></span></span>
+  <span><b>불빛 자리</b> <span id="lpos"></span></span>
+  <span><b>한 판</b> <span id="cost"></span></span>
+</div>
+
+<div class="ctl">
+  <div><label>기둥 수 <b id="v_ncol"></b></label>
+       <input id="s_ncol" type="range" min="2" max="7" step="1" value="4"></div>
+  <div><label>기둥 두께 (화면 칸) <b id="v_thick"></b></label>
+       <input id="s_thick" type="range" min="30" max="180" step="5" value="70"></div>
+  <div><label>기둥 깊이 <b id="v_dcol"></b></label>
+       <input id="s_dcol" type="range" min="10" max="60" step="1" value="18"></div>
+  <div><label>불빛 크기 <b id="v_rw"></b></label>
+       <input id="s_rw" type="range" min="10" max="150" step="2" value="40"></div>
+  <div><label>불빛 깊이 <b id="v_dl"></b></label>
+       <input id="s_dl" type="range" min="12" max="90" step="1" value="28"></div>
+  <div><label>불빛 높이 <b id="v_lh"></b></label>
+       <input id="s_lh" type="range" min="0" max="120" step="5" value="25"></div>
+  <div><label>바닥 기울기 <b id="v_tilt"></b></label>
+       <input id="s_tilt" type="range" min="30" max="120" step="2" value="62"></div>
+  <div><label>기둥 홈 수 <b id="v_flute"></b></label>
+       <input id="s_flute" type="range" min="0" max="5" step="1" value="2"></div>
+  <div><label>계단 수 <b id="v_steps"></b></label>
+       <input id="s_steps" type="range" min="0" max="20" step="1" value="9"></div>
+  <div><label>계단 시작 높이 <b id="v_sTop"></b></label>
+       <input id="s_sTop" type="range" min="0" max="90" step="2" value="30"></div>
+  <div><label>계단 끝 높이 <b id="v_sBot"></b></label>
+       <input id="s_sBot" type="range" min="10" max="100" step="2" value="92"></div>
+  <div><label>한 판 시간 <b id="v_dur"></b></label>
+       <input id="s_dur" type="range" min="30" max="140" step="2" value="60"></div>
+</div>
+
+<div class="row">
+  <button id="bPlay">멈춤</button>
+  <button id="bTile">바닥 눈금 켜짐</button>
+  <button id="bDir">아래로</button>
+  <button id="bReset">되돌리기</button>
+</div>
+
+<p class="note">
+바닥은 <b>1/깊이</b> 로 눕는다 — 던전의 바닥 캐스팅과 같은 관계다. 그래서 같은 크기의
+빛무리라도 가까울수록 넓게 퍼지고 멀수록 오므라든다. 그것이 기울기다.<br>
+불빛은 기둥보다 <b>깊이가 커야</b> 가려진다. 불빛 깊이를 기둥 깊이보다 작게 내리면
+불빛이 앞으로 나와 아무것도 가리지 못한다.<br>
+칸은 세로가 가로의 두 배쯤 기므로 화면에서 거리를 잴 때는 세로를 눌러야 한다.
+</p>
+</div>
+
+<script>
+var RAMP=["█","▓","▒","░","·"];
+var W=100, H=33, MAXW=132, MAXH=40;   // 크면 DOM 이 감당을 못 한다
+
+/* 맞춰 볼 값들 */
+/* 두께를 세계 단위로 잡았더니 깊이를 바꿀 때마다 폭이 요동쳤다.
+   보이는 대로 맞출 수 있게 화면 칸으로 잡는다 */
+var P = {
+  ncol:3,        // 기둥 수
+  thick:8.0,     // 기둥 반폭 (화면 칸)
+  dcol:1.0,      // 기둥 깊이 — 발이 닿는 자리를 정한다
+  rw:0.32,       // 불빛 크기 (세계 단위)
+  dl:1.8,        // 불빛 깊이 — 기둥보다 커야 뒤로 지나간다
+  lh:0.40,       // 불빛 높이 (바닥에서)
+  tilt:0.70,     // 바닥 기울기 — 지평선 자리
+  flute:4,       // 세로 홈 수
+  steps:9,       // 계단 수 — 지면이 오른쪽으로 내려간다
+  /* 한 단 높이 대신 시작·끝 높이를 직접 잡는다. 그래야 "왼쪽 위에서
+     오른쪽 아래로" 를 화면에 대고 정확히 맞출 수 있다 (화면 높이 비율) */
+  sTop:0.30,     // 왼쪽 끝 지면
+  sBot:0.92,     // 오른쪽 끝 지면
+  dur:6.0        // 한 판 시간(초)
+};
+var TILE=true, DIR=1, playing=true;
+
+var view=document.getElementById("view"), probe=document.getElementById("probe");
+function fit(){
+  var iw=window.innerWidth, ih=window.innerHeight;
+  var fs = iw<400?9 : iw<620?10.5 : iw<900?12 : iw<1400?13 : 14;
+  var avail=Math.min(1680,iw-24)-20;
+  for(var pass=0; pass<3; pass++){
+    view.style.fontSize=fs+"px"; probe.style.fontSize=fs+"px";
+    probe.textContent=new Array(101).join("M");
+    var cw=probe.getBoundingClientRect().width/100;
+    var maxW=Math.floor(avail/cw), maxH=Math.floor((ih*0.52)/fs);
+    if(maxW/3 <= maxH){ W=maxW; H=Math.round(W/3); }
+    else { H=maxH; W=H*3; }
+    if(W<=MAXW) break;
+    fs=fs*W/MAXW;
+  }
+  W=Math.max(40,Math.min(MAXW,W));
+  H=Math.max(14,Math.min(MAXH,H));
+  document.getElementById("grid").textContent=W+"×"+H;
+  rowEls=null;                                // 격자가 바뀌면 행 상자를 다시 만든다
+}
+
+/* 한 장면을 그린다. t 는 0~1 */
+var lastLX=0;
+function frame(t){
+  var buf=[], lv=[], r, c;
+  for(r=0;r<H;r++){ buf.push(new Array(W).fill(" ")); lv.push(new Array(W).fill(10)); }
+
+  var fade = t<0.16 ? t/0.16 : t>0.84 ? (1-t)/0.16 : 1;
+  var dark = Math.round((1-fade)*4);
+  if(dark>=4) return emit(buf,lv);
+
+  var hz = Math.round(H*(1-P.tilt));          // 지평선. 기울기가 클수록 위로 올라간다
+  var FD = Math.max(1, H-1-hz);               // 맨 아랫줄이 깊이 1 이 되게
+  var KX = 2.2/W;                             // 깊이 1 에서 화면 폭이 세계 2.2
+
+  /* 지면이 왼쪽 위에서 오른쪽 아래로 한 단씩 내려간다. 열마다 지평선을 내려 주면
+     원근을 따로 손대지 않고도 내려가는 계단이 된다.
+     불빛이 지면을 딛고 서므로, 불빛의 화면 행이 시작·끝 높이에 그대로 맞는다 */
+  var lightBase = hz + FD/P.dl;
+  var drop = function(x){
+    var k = P.steps <= 0 ? x/W
+          : Math.floor(x/W*P.steps)/Math.max(1, P.steps-1);
+    if(k > 1) k = 1;
+    return (H*P.sTop + (H*P.sBot - H*P.sTop)*k) - lightBase;
+  };
+
+  /* 불빛 — 세계 좌표에서 왼쪽에서 오른쪽으로 지난다 */
+  var span = P.dl*KX*W*0.62;                  // 화면 밖에서 들어와 밖으로 나간다
+  var pr = t<0.14 ? 0 : t>0.86 ? 1 : (t-0.14)/0.72;
+  var LWX = (-span + 2*span*pr) * (DIR>0 ? 1 : -1);
+  var lsc = W*0.5 + LWX/(P.dl*KX);            // 불빛의 화면 열
+  var lsr = hz + drop(lsc) + FD/P.dl;         // 불빛은 계단 위를 따라 내려간다
+  lastLX = lsc;
+
+  /* 바닥 — 1/깊이로 눕는다. 같은 빛무리라도 가까울수록 넓게 퍼진다 */
+  for(c=0;c<W;c++){
+    var hzc = hz + drop(c);                   // 이 열의 지면 높이 (소수)
+    /* 행 번호는 정수여야 한다 — 소수를 그대로 쓰면 buf[11.6] 을 짚는다.
+       거리 계산에는 소수 그대로 써야 계단이 매끄럽게 이어진다 */
+    for(r=Math.max(0,Math.floor(hzc)+1); r<H; r++){
+      var dz = FD/(r-hzc);
+      var wx = (c-W*0.5)*dz*KX;
+      var ddx = wx-LWX, ddz = dz-P.dl;
+      var d3 = Math.sqrt(ddx*ddx + ddz*ddz + P.lh*P.lh);
+      var L = Math.round(d3/P.rw) + dark;
+      if(TILE){
+        var fz = dz*2 - Math.floor(dz*2), fx = wx*2 - Math.floor(wx*2);
+        if(fz<0.12 || fx<0.07) L += 1;        // 바닥 눈금 — 깊이가 눈에 보이게
+      }
+      if(L<4){ buf[r][c]=RAMP[L]; lv[r][c]=10+L; }
+    }
+  }
+
+  /* 불빛 자체 — 공중에 뜬 작은 덩어리. 기둥보다 먼저 그려야 가려진다 */
+  var airR = Math.max(2, P.rw/(P.dl*KX)*0.5);   // 세계 크기를 화면 칸으로
+  for(r=0;r<H;r++) for(c=0;c<W;c++){
+    var sx=(c-lsc), sy=(r-lsr)*2.0;
+    var SL=Math.round(Math.sqrt(sx*sx+sy*sy)/(airR*0.55))+dark;
+    if(SL<4 && SL<(lv[r][c]-10)){ buf[r][c]=RAMP[SL]; lv[r][c]=10+SL; }
+  }
+
+  /* 기둥 — 역광의 실루엣. 모서리로만 빛이 번진다 */
+  var halfW = P.thick;                        // 화면 반폭 (칸)
+  /* 기둥도 계단 위에 선다 — 발이 닿는 자리가 열마다 다르다 */
+  for(var i=0;i<P.ncol;i++){
+    /* 세계 좌표로 자리를 잡았더니 간격이 어긋나 기둥이 겹쳤다.
+       보이는 대로 고르게 놓는다 */
+    var cx = W*(i+0.5)/P.ncol;
+    /* 발이 닿는 자리를 계단에 맞췄더니 기둥마다 길이가 달라 어수선했다.
+       위아래로 꽉 채운다 */
+    for(r=0;r<H;r++){
+      var half = Math.round(halfW);          // 위아래 장식 없이 길쭉한 기둥
+      for(c=Math.round(cx-half); c<=Math.round(cx+half); c++){
+        if(c<0||c>=W) continue;
+        var u=(c-(cx-half))/(2*half);
+        var LL=2+dark;
+        if(P.flute > 0 && ((u*P.flute)%1) < 0.16) LL+=1;   // 세로 홈
+        var warm=false;
+        var eg=Math.min(c-(cx-half), (cx+half)-c);
+        if(eg<=1.2){                          // 모서리 번짐
+          var ex=(c-lsc), ey=(r-lsr)*2.0;
+          var rim=Math.round(Math.sqrt(ex*ex+ey*ey)/3.0)+dark;
+          if(rim<LL){ LL=rim; warm=true; }
+        }
+        LL=Math.max(0,Math.min(4,LL));
+        buf[r][c]=RAMP[LL];
+        /* 몸통은 차가운 돌, 빛이 번진 모서리만 따뜻하다 */
+        lv[r][c] = warm ? 10+LL : LL;
+      }
+    }
+  }
+  return emit(buf,lv);
+}
+
+/* 행마다 따로 내놓는다. 화면을 통째로 갈아끼우면 매 프레임 수백 개의 요소를
+   버리고 새로 만든다 — 브라우저가 감당 못 한다. 달라진 행만 고쳐 쓰기 위해서다 */
+function emit(buf,lv){
+  var out=new Array(H), r, c;
+  /* 10 이상은 따뜻한 쪽(a), 그 아래는 차가운 돌(d) — 던전과 같은 규약 */
+  var wrap=function(v,run){
+    return "<span class=" + (v>=10 ? "a"+(v-10) : "d"+v) + ">" + run + "</span>";
+  };
+  for(r=0;r<H;r++){
+    var html="", run="", cur=lv[r][0];
+    for(c=0;c<W;c++){
+      if(lv[r][c]!==cur){ html+=wrap(cur,run); run=""; cur=lv[r][c]; }
+      run+=buf[r][c];
+    }
+    out[r]=html+wrap(cur,run);
+  }
+  return out;
+}
+
+/* 행 상자를 한 번만 만들고, 이후로는 달라진 행만 다시 쓴다 */
+var rowEls=null, rowCache=[];
+function mount(){
+  var html="";
+  for(var r=0;r<H;r++) html+="<div></div>";
+  view.innerHTML=html;
+  rowEls=view.querySelectorAll("div");
+  rowCache=new Array(H);
+}
+function paint(rows){
+  if(!rowEls || rowEls.length!==H) mount();
+  var n=0;
+  for(var r=0;r<H;r++){
+    if(rowCache[r]===rows[r]) continue;
+    rowCache[r]=rows[r];
+    rowEls[r].innerHTML=rows[r];
+    n++;
+  }
+  return n;
+}
+
+/* 조작 */
+var S=[["ncol","s_ncol","v_ncol",1,function(v){return v+"개";}],
+       ["thick","s_thick","v_thick",10,function(v){return v.toFixed(0)+"칸";}],
+       ["dcol","s_dcol","v_dcol",10,function(v){return v.toFixed(1);}],
+       ["rw","s_rw","v_rw",100,function(v){return v.toFixed(2);}],
+       ["dl","s_dl","v_dl",10,function(v){return v.toFixed(1);}],
+       ["lh","s_lh","v_lh",100,function(v){return v.toFixed(2);}],
+       ["tilt","s_tilt","v_tilt",100,function(v){return v.toFixed(2);}],
+       ["flute","s_flute","v_flute",1,function(v){return v+"줄";}],
+       ["steps","s_steps","v_steps",1,function(v){return v+"단";}],
+       ["sTop","s_sTop","v_sTop",100,function(v){return (v*100).toFixed(0)+"%";}],
+       ["sBot","s_sBot","v_sBot",100,function(v){return (v*100).toFixed(0)+"%";}],
+       ["dur","s_dur","v_dur",10,function(v){return v.toFixed(1)+"초";}]];
+function syncLabels(){
+  S.forEach(function(q){
+    document.getElementById(q[2]).textContent=q[4](P[q[0]]);
+    document.getElementById(q[1]).value=Math.round(P[q[0]]*q[3]);
+  });
+}
+S.forEach(function(q){
+  document.getElementById(q[1]).addEventListener("input",function(){
+    P[q[0]]=+this.value/q[3];
+    document.getElementById(q[2]).textContent=q[4](P[q[0]]);
+  });
+});
+document.getElementById("bPlay").addEventListener("click",function(){
+  playing=!playing; this.textContent=playing?"멈춤":"이어서"; });
+document.getElementById("bTile").addEventListener("click",function(){
+  TILE=!TILE; this.textContent=TILE?"바닥 눈금 켜짐":"바닥 눈금 꺼짐"; });
+document.getElementById("bDir").addEventListener("click",function(){
+  DIR=-DIR; this.textContent=DIR>0?"아래로":"위로"; });
+document.getElementById("bReset").addEventListener("click",function(){
+  P={ncol:3,thick:8.0,dcol:1.0,rw:0.32,dl:1.8,lh:0.40,tilt:0.70,flute:4,steps:9,sTop:0.30,sBot:0.92,dur:6.0};
+  syncLabels(); });
+window.addEventListener("resize",fit);
+
+/* 60프레임으로 돌릴 이유가 없다. 30이면 충분하고 DOM 비용이 절반이 된다 */
+var FPS=30, t=0, last=0, lastDraw=0;
+function loop(ts){
+  requestAnimationFrame(loop);
+  if(document.hidden) { last=ts; return; }      // 안 보이는 창에서 태우지 않는다
+  var dt=Math.min(0.05,(ts-(last||ts))/1000); last=ts;
+  if(playing){ t += dt/P.dur; if(t>=1) t=0; }
+  if(ts-lastDraw < 1000/FPS) return;
+  lastDraw=ts;
+  var t0=performance.now();
+  var n=paint(frame(t));                        // 계산 + DOM 을 함께 잰다
+  var ms=performance.now()-t0;
+  document.getElementById("tnum").textContent=(t*P.dur).toFixed(1)+"초 / "+P.dur.toFixed(1);
+  document.getElementById("lpos").textContent=lastLX.toFixed(0)+" 열";
+  document.getElementById("cost").textContent=ms.toFixed(2)+"ms · 고쳐 쓴 행 "+n+"/"+H;
+}
+fit(); syncLabels(); requestAnimationFrame(loop);
+</script></body></html>
