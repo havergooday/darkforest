@@ -1,0 +1,913 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>wedding.invite — secure shell</title>
+<style>
+:root{
+  --bg:#04070a; --g:#3bf07a; --gd:#1c7a42; --gf:#0e3c22;
+  --r:#ff4d4d; --amb:#ffc14d; --w:#d8ffe6;
+}
+*{box-sizing:border-box}
+html{background:#000}
+body{
+  margin:0; height:100vh; height:100dvh;   /* dvh 없는 구형 iOS 는 vh 로 떨어진다 */
+  overflow:hidden; touch-action:manipulation;
+  background:var(--bg); color:var(--g);
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"D2Coding","Courier New",monospace;
+  font-size:13px; line-height:1.65;
+  -webkit-text-size-adjust:100%; text-size-adjust:100%;
+  -webkit-tap-highlight-color:transparent;
+  display:flex; flex-direction:column;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+/* CRT 흉내. 글자 위에 얹기만 하고 입력은 통과시킨다 */
+#crt{position:fixed;inset:0;pointer-events:none;z-index:60;
+  background:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.28) 2px 3px);
+  mix-blend-mode:multiply}
+#vig{position:fixed;inset:0;pointer-events:none;z-index:61;
+  background:radial-gradient(ellipse at 50% 45%,rgba(0,0,0,0) 55%,rgba(0,0,0,.55) 100%)}
+
+/* ── 상단 바 ───────────────────────────────── */
+#top{flex:0 0 auto;display:flex;align-items:center;gap:8px;
+  padding:8px 12px;border-bottom:1px solid var(--gf);
+  font-size:11px;color:var(--gd);letter-spacing:.04em}
+#top .t{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#top.hot .t{color:var(--r)}
+#top button{all:unset;padding:5px 9px;border:1px solid var(--gf);border-radius:2px;
+  color:var(--gd);font:inherit;cursor:pointer;touch-action:manipulation}
+#top button:active{color:var(--g);border-color:var(--gd)}
+#snd.on{color:var(--g);border-color:var(--gd)}
+
+/* ── 로그 영역 ─────────────────────────────── */
+#screen{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;
+  padding:12px 12px 18px;-webkit-overflow-scrolling:touch}
+#screen>div{white-space:pre-wrap;word-break:break-word}
+.dim{color:var(--gd)}
+.warn{color:var(--amb)}
+.bad{color:var(--r)}
+.hi{color:var(--w)}
+.sp{height:8px}
+
+/* ── 유출 패널 ─────────────────────────────── */
+.panel{border:1px solid var(--gf);border-radius:2px;padding:10px 11px;margin:10px 0}
+.panel.hot{border-color:#5a1f1f;box-shadow:0 0 18px rgba(255,77,77,.09) inset}
+.panel h4{margin:0 0 8px;font-size:11px;font-weight:400;letter-spacing:.18em;color:var(--r)}
+.prow{display:flex;align-items:center;gap:9px;line-height:2;white-space:nowrap}
+.prow .k{flex:0 0 auto;color:var(--gd);font-size:12px}
+.prow .v{flex:1 1 auto;letter-spacing:.5px;font-size:12px;color:var(--r);overflow:hidden}
+.prow .s{flex:0 0 auto;font-size:11px;color:var(--r);text-align:right;min-width:3.4em}
+.prow.ok .v,.prow.ok .s{color:var(--g)}
+.prow.wait .v,.prow.wait .s{color:var(--gf)}
+
+/* ── 미션 ──────────────────────────────────── */
+.mis{border:1px dashed var(--gd);border-radius:2px;padding:12px 12px 13px;margin:12px 0}
+.mis .tag{font-size:10px;letter-spacing:.22em;color:var(--gd);margin-bottom:6px}
+.mis .q{color:var(--w);line-height:1.8}
+.mis b{font-weight:400;color:var(--g)}
+.mis .note{font-size:11.5px;color:var(--gd);margin-top:7px;line-height:1.7}
+.opts{display:flex;flex-direction:column;gap:7px;margin-top:11px}
+.opts button,.big{all:unset;display:block;text-align:center;
+  padding:12px 10px;border:1px solid var(--gd);border-radius:2px;
+  color:var(--g);font:inherit;cursor:pointer;touch-action:manipulation;
+  -webkit-user-select:none;user-select:none}
+.opts button:active,.big:active{background:rgba(59,240,122,.13)}
+.opts button[disabled]{opacity:.35;pointer-events:none}
+.big{margin-top:11px;padding:22px 10px;font-size:15px;letter-spacing:.1em;
+  transition:transform .09s,background .18s}
+.big.hit{transform:scale(.96);background:rgba(255,77,77,.16);border-color:var(--r)}
+.gauge{margin-top:10px;font-size:12px;letter-spacing:1px;color:var(--g)}
+.gauge b{font-weight:400;color:var(--gd)}
+/* 두드리면 하트가 떠오르는 자리 */
+.sky{position:relative;height:66px;overflow:hidden;margin-top:6px}
+.sky span{position:absolute;bottom:0;color:var(--r);animation:up 1.15s ease-out forwards}
+@keyframes up{
+  from{transform:translate(0,0) scale(.7);opacity:0}
+  20%{opacity:1}
+  to{transform:translate(var(--drift,0),-62px) scale(1.15);opacity:0}
+}
+/* 심박 파형 — 두드릴수록 자란다 */
+.ecg{height:1.5em;overflow:hidden;white-space:pre;color:var(--g);
+  font-size:13px;letter-spacing:-.5px;opacity:.75}
+
+/* ── 입력줄 ────────────────────────────────── */
+#bar{flex:0 0 auto;display:none;align-items:center;gap:7px;
+  padding:9px 12px calc(9px + env(safe-area-inset-bottom));
+  border-top:1px solid var(--gf);background:#04070a}
+#bar.on{display:flex}
+#bar span{color:var(--g)}
+#bar input{flex:1;all:unset;color:var(--w);font:inherit;caret-color:var(--g);min-width:0}
+#bar input::placeholder{color:var(--gf)}
+#bar button{all:unset;padding:7px 12px;border:1px solid var(--gd);border-radius:2px;
+  color:var(--g);font:inherit;cursor:pointer;touch-action:manipulation}
+
+/* ── 게이트(암전) ──────────────────────────── */
+/* inset:0 으로 두면 키보드가 올라와도 게이트는 그대로라 입력칸이 가려진다.
+   위에 고정하고 높이만 바꾼다 */
+#gate{position:fixed;left:0;right:0;top:0;height:100vh;height:100dvh;z-index:50;background:#000;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;padding:28px 22px calc(28px + env(safe-area-inset-bottom));text-align:center;
+  transition:opacity .5s}
+#gate.out{opacity:0;pointer-events:none}
+#gate .cur{font-size:19px;letter-spacing:2px;color:var(--g)}
+#gate .cur i{font-style:normal;animation:blink 1.05s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+#gate .msg{font-size:12.5px;color:var(--gd);line-height:1.9;min-height:2.6em}
+#gate .hint{font-size:11px;color:var(--gf);opacity:0;transition:opacity .8s;line-height:1.8}
+#gate .hint.on{opacity:1}
+#gate form{display:none;gap:7px;align-items:center;width:100%;max-width:290px;
+  border-bottom:1px solid var(--gd);padding-bottom:7px}
+#gate form.on{display:flex}
+#gate input{flex:1;all:unset;color:var(--w);font:inherit;text-align:center;
+  letter-spacing:.3em;text-transform:uppercase;min-width:0;caret-color:var(--g)}
+#gate .again{display:none;flex-direction:column;gap:9px;width:100%;max-width:290px}
+#gate .again.on{display:flex}
+#gate button{all:unset;padding:11px 14px;border:1px solid var(--gd);border-radius:2px;
+  color:var(--g);font:inherit;text-align:center;cursor:pointer;touch-action:manipulation}
+#gate button:active{background:rgba(59,240,122,.12)}
+#gate button.sub{border-color:var(--gf);color:var(--gd)}
+
+/* ── 아스키 청첩장 ─────────────────────────── */
+#card{margin:14px 0 4px;display:flex;flex-direction:column;align-items:center}
+.box{display:inline-block;transform-origin:top center}
+.edge{white-space:pre;font-size:13px;line-height:1.5;color:var(--gd)}
+/* 액자 안쪽 한 줄. 세로 막대는 flex 양끝에 두고, 가운데를 따로 채운다.
+   글자 수로 맞추면 한글 폭 때문에 반드시 어긋난다 */
+.fr{display:flex;align-items:center;line-height:1.5;font-size:13px}
+.fr .b{flex:0 0 auto;color:var(--gd);white-space:pre}
+.fr .c{flex:1 1 auto;text-align:center;white-space:pre;overflow:hidden}
+/* 걸어 다니는 장면은 38칸을 꽉 채운 글자판이다. 가운데 정렬하면 반올림
+   오차만큼 좌우로 흔들린다 */
+.fr .c.scn{text-align:left;color:var(--w)}
+.fr.h .c{color:var(--w)}
+.fr .nm{font-size:17px;letter-spacing:.06em;color:var(--w)}
+.fr .lb{font-size:10px;letter-spacing:.3em;color:var(--gd)}
+.fr .art{color:var(--r);text-shadow:0 0 10px rgba(255,77,77,.45)}
+.fr .gr{letter-spacing:.28em;color:var(--g)}
+#acts{display:flex;flex-direction:column;gap:8px;margin:16px auto 6px;
+  width:100%;max-width:300px}
+#acts a,#acts button{all:unset;display:block;text-align:center;padding:12px 10px;
+  border:1px solid var(--gd);border-radius:2px;color:var(--g);font:inherit;
+  cursor:pointer;touch-action:manipulation}
+#acts a:active,#acts button:active{background:rgba(59,240,122,.12)}
+#acts .sub{border-color:var(--gf);color:var(--gd)}
+#sig{text-align:center;font-size:11px;color:var(--gf);line-height:2;margin:12px 0 6px}
+
+/* ── 하트 비 ───────────────────────────────── */
+/* 글자 뒤에 깔린다. 읽는 것을 방해하면 안 된다 */
+#rain{position:fixed;left:0;right:0;top:0;height:100vh;height:100dvh;
+  z-index:1;pointer-events:none;overflow:hidden}
+#rain span{position:absolute;top:0;color:var(--r);will-change:transform;
+  animation:fall linear infinite}
+#rain span.g{color:var(--g)}
+@keyframes fall{
+  from{transform:translateY(-14vh) rotate(-8deg)}
+  to  {transform:translateY(112vh) rotate(8deg)}
+}
+/* 비보다 위에 있어야 글자가 읽힌다 */
+#top,#screen,#bar{position:relative;z-index:2}
+
+@keyframes shake{
+  0%,100%{transform:translate(0,0)}
+  20%{transform:translate(-4px,1px)}40%{transform:translate(3px,-2px)}
+  60%{transform:translate(-3px,2px)}80%{transform:translate(4px,-1px)}
+}
+body.shake{animation:shake .42s}
+
+@media (prefers-reduced-motion:reduce){
+  #crt{display:none}
+  #gate .cur i{animation:none}
+  body.shake{animation:none}
+  #rain{display:none}
+  .sky{display:none}
+}
+</style></head><body>
+
+<div id="top">
+  <span class="t" id="host">wedding.invite — secure shell</span>
+  <button id="snd" title="소리">&#9834;</button>
+  <button id="skip">건너뛰기</button>
+</div>
+
+<div id="screen"></div>
+
+<form id="bar" autocomplete="off">
+  <span>&gt;</span>
+  <input id="in" type="text" enterkeyhint="send" autocomplete="off"
+         autocapitalize="off" autocorrect="off" spellcheck="false">
+  <button type="submit">전송</button>
+</form>
+
+<div id="gate">
+  <div class="cur">&gt; <i>_</i></div>
+  <div class="msg" id="gmsg">[ 화면을 누르십시오 ]</div>
+  <form id="gform" autocomplete="off">
+    <input id="gin" type="text" enterkeyhint="go" placeholder="ACCESS CODE"
+           autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false">
+    <button type="submit">↵</button>
+  </form>
+  <div class="hint" id="ghint"></div>
+  <div class="again" id="gagain">
+    <button id="gre">다시 처음부터</button>
+    <button id="gskip" class="sub">청첩장 바로 보기</button>
+  </div>
+</div>
+
+<div id="crt"></div><div id="vig"></div>
+
+<script>
+"use strict";
+/* ══════════════════════════════════════════════════════════════
+   청첩장 정보 — 실제 정보로 바꿀 때 이 블록만 고치면 된다
+   ══════════════════════════════════════════════════════════════ */
+const INVITE = {
+  groom : { name:'홍길동', parents:'홍아버지 · 홍어머니' , rel:'아들'},
+  bride : { name:'성춘향', parents:'성아버지 · 성어머니' , rel:'딸'},
+  date  : '2026-10-10T13:30',
+  place : { name:'OO컨벤션', hall:'3층 그랜드홀', mapUrl:'' },
+  back  : '',            // ← 기존 모바일 청첩장 URL. 비워 두면 뒤로가기로 동작한다
+  code  : 'LOVE',        // 비밀코드 (대소문자 무시)
+};
+
+/* 연출 대사. 로직을 읽지 않고 여기만 고칠 수 있어야 한다.
+   [문장, 다음 줄까지 지연(ms), 클래스] — 지연을 일정하게 주면 가짜 티가 난다 */
+const BOOT = [
+  ['$ ssh guest@wedding.invite',                       340, 'hi'],
+  ['Connecting to 192.168.10.10:22 ... OK',            180, 'dim'],
+  ['Last login: ' + new Date().toLocaleString('en-GB'), 260, 'dim'],
+  ['',                                                  90, ''],
+  ['[ 0.001 ] mounting /heart ................. done',  70, ''],
+  ['[ 0.014 ] scanning couple_records ......... 2 found',120, ''],
+  ['[ 0.031 ] loading first_met.log ........... 2019',   90, ''],
+  ['[ 0.052 ] loading ring_size.dat ........... REDACTED',150, 'dim'],
+  ['@BAR:decrypting VOW.dat',                           140, ''],
+  ['[ 0.640 ] indexing photo/ ................. 1,284 files', 90, ''],
+  ['[ 0.771 ] parsing guest_list .............. you are here', 420, 'hi'],
+  ['',                                                  80, ''],
+  ['[ 0.812 ] establishing tunnel ............. ok',     90, 'dim'],
+  ['@BAR:exfiltrating WEDDING.db',                      160, ''],
+  ['',                                                 120, ''],
+  ['[ 0.981 ] WARNING: unauthorized access detected',   500, 'bad'],
+];
+
+/* ══════════════════════════════════════════════════════════════ */
+
+const $  = s => document.querySelector(s);
+const scr = $('#screen'), gate = $('#gate'), bar = $('#bar'), inp = $('#in');
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const Q = new URLSearchParams(location.search);
+const KEY = 'wed.hack.cleared';
+
+let fast = false;                       // 화면을 누르면 연출 건너뛰기
+let onSubmit = null;                    // 입력줄이 지금 누구 것인지
+let stick = true;                       // 로그 자동 따라가기
+let interactive = false;                // 미션 진행 중 — 탭을 빨리감기로 먹지 않는다
+
+/* 건너뛰기를 누르면 흐르던 연출이 지워진 화면에 계속 글을 쓴다.
+   진행 중이던 순서에 번호를 붙여 두고, 번호가 바뀌면 스스로 멈추게 한다 */
+let seq = 0;
+const alive = s => s === seq;
+
+/* ── 소리 ─────────────────────────────────────────────────────
+   파일 없이 WebAudio로 만든다. 기본은 꺼짐 — 지하철에서 여는 하객이 있다 */
+let ac = null, snd = false;
+function beep(f, dur, type, vol){
+  if(!snd) return;
+  try{
+    ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+    if(ac.state === 'suspended') ac.resume();
+    const o = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime;
+    o.type = type || 'square'; o.frequency.value = f;
+    o.connect(g); g.connect(ac.destination);
+    g.gain.setValueAtTime(vol == null ? .035 : vol, t);
+    g.gain.exponentialRampToValueAtTime(.0001, t + (dur || .04));
+    o.start(t); o.stop(t + (dur || .04) + .02);
+  }catch(e){}
+}
+const key   = () => beep(620 + Math.random()*260, .018, 'square', .022);
+const chord = () => [523,659,784,1047].forEach((f,i)=>setTimeout(()=>beep(f,.5,'triangle',.06),i*110));
+const buzz  = () => beep(88, .55, 'sawtooth', .05);
+
+$('#snd').onclick = () => {
+  snd = !snd;
+  $('#snd').classList.toggle('on', snd);
+  if(snd) beep(880, .06, 'triangle', .04);
+};
+
+/* ── 타이핑 엔진 ──────────────────────────────────────────────
+   setInterval 이 아니라 rAF + 경과시간. 저사양 폰이나 백그라운드 탭에서
+   타이머가 밀리면 연출이 통째로 어긋난다 */
+const instant = () => REDUCED || fast;
+
+function sc(){ if(stick) scr.scrollTop = scr.scrollHeight; }
+function line(cls){
+  const d = document.createElement('div');
+  if(cls) d.className = cls;
+  scr.appendChild(d); sc(); return d;
+}
+function wait(ms){
+  return new Promise(res => {
+    if(instant()) return res();
+    let t0 = null;
+    const step = ts => {
+      if(instant()) return res();
+      if(t0 === null) t0 = ts;
+      if(ts - t0 >= ms) return res();
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+}
+function type(text, cls, cps){
+  /* 빈 줄은 글자가 없어 높이가 0이 된다. 사이를 띄우려면 여백 줄이어야 한다 */
+  if(!text) return Promise.resolve(line('sp'));
+  const el = line(cls);
+  if(instant()){ el.textContent = text; sc(); return Promise.resolve(el); }
+  const speed = cps || 62;
+  return new Promise(res => {
+    let t0 = null, n = 0;
+    const step = ts => {
+      if(instant()){ el.textContent = text; sc(); return res(el); }
+      if(t0 === null) t0 = ts;
+      const k = Math.min(text.length, Math.floor((ts - t0) / 1000 * speed));
+      if(k > n){ n = k; el.textContent = text.slice(0, k); key(); sc(); }
+      if(n >= text.length){ el.textContent = text; return res(el); }
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+}
+/* 제자리에서 차오르는 줄 */
+function bar10(label, ms){
+  const el = line();
+  const draw = p => {
+    const n = Math.round(p * 10);
+    el.textContent = '[ ' + (p*1.2).toFixed(3) + ' ] ' + label + ' '
+      + '█'.repeat(n) + '░'.repeat(10 - n) + '  '
+      + String(Math.round(p*100)).padStart(3) + '%';
+  };
+  if(instant()){ draw(1); sc(); return Promise.resolve(el); }
+  return new Promise(res => {
+    let t0 = null;
+    const step = ts => {
+      if(instant()){ draw(1); sc(); return res(el); }
+      if(t0 === null) t0 = ts;
+      const p = Math.min(1, (ts - t0) / ms);
+      draw(p); sc();
+      if(p >= 1) return res(el);
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+}
+
+/* ── 입력줄 ───────────────────────────────────────────────── */
+function ask(placeholder, handler){
+  onSubmit = handler;
+  inp.value = ''; inp.placeholder = placeholder || '';
+  bar.classList.add('on');
+  setTimeout(() => inp.focus(), 60);
+}
+function unask(){ onSubmit = null; bar.classList.remove('on'); inp.blur(); }
+bar.addEventListener('submit', e => {
+  e.preventDefault();
+  const v = inp.value.trim();
+  if(onSubmit) onSubmit(v);
+});
+
+/* ── 유출 패널 ────────────────────────────────────────────── */
+const FIELDS = [
+  { id:'groom', k:'신랑 이름' },
+  { id:'bride', k:'신부 이름' },
+  { id:'date' , k:'예식 일시' },
+  { id:'place', k:'예식 장소' },
+];
+let panel = null;
+function makePanel(){
+  panel = document.createElement('div');
+  panel.className = 'panel hot';
+  panel.innerHTML = '<h4>!! WEDDING DATA BREACH !!</h4>';
+  FIELDS.forEach(f => {
+    const r = document.createElement('div');
+    r.className = 'prow wait'; r.dataset.id = f.id;
+    r.innerHTML = '<span class="k">' + f.k + '</span>'
+                + '<span class="v">' + '░'.repeat(10) + '</span>'
+                + '<span class="s">대기</span>';
+    panel.appendChild(r);
+  });
+  scr.appendChild(panel); sc();
+}
+function setRow(id, filled, status, state){
+  const r = panel.querySelector('[data-id="' + id + '"]');
+  if(!r) return;
+  r.className = 'prow' + (state ? ' ' + state : '');
+  r.querySelector('.v').textContent = '█'.repeat(filled) + '░'.repeat(10 - filled);
+  r.querySelector('.s').textContent = status;
+}
+function leak(id, ms){
+  return new Promise(res => {
+    if(instant()){ setRow(id, 10, '유출됨', ''); return res(); }
+    let t0 = null;
+    const step = ts => {
+      if(t0 === null) t0 = ts;
+      const p = Math.min(1, (ts - t0) / ms);
+      setRow(id, Math.round(p * 10), p < 1 ? '유출 중' : '유출됨', '');
+      if(p >= 1) return res();
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+}
+function restore(id){
+  setRow(id, 10, '복구됨', 'ok');
+  beep(1046, .12, 'triangle', .05);
+}
+
+/* ── 연출 1·2단계 ─────────────────────────────────────────── */
+async function boot(s){
+  for(const [text, delay, cls] of BOOT){
+    if(!alive(s)) return;
+    if(text.startsWith('@BAR:')) await bar10(text.slice(5).padEnd(26, '.'), 900);
+    else await type(text, cls);
+    await wait(delay);
+  }
+  if(!alive(s)) return;
+  if(!REDUCED){ document.body.classList.add('shake'); setTimeout(()=>document.body.classList.remove('shake'), 460); }
+  buzz();
+  $('#top').classList.add('hot');
+  $('#host').textContent = '!! BREACH — wedding.invite';
+  await wait(320);
+  if(!alive(s)) return;
+
+  makePanel();
+  fast = false;                       // 여기부터는 하객 차례. 스킵을 되돌린다
+  await leak('groom', 620);
+  await leak('bride', 620);
+  await leak('date' , 760);
+  await wait(260);
+  if(!alive(s)) return;
+
+  await type('');
+  await type('연결을 끊을 수 없습니다.', 'bad', 34);
+  await wait(400);
+  await type('이 침입은 오직 하나로만 차단됩니다.', 'warn', 34);
+  await wait(500);
+  await type('▶ 인증 절차 2단계를 시작합니다.', 'hi', 40);
+  await wait(400);
+}
+
+/* ── 미션 ─────────────────────────────────────────────────── */
+function mission(tag, q, note){
+  interactive = true;
+  const m = document.createElement('div');
+  m.className = 'mis';
+  m.innerHTML = '<div class="tag">' + tag + '</div><div class="q">' + q + '</div>'
+              + (note ? '<div class="note">' + note + '</div>' : '');
+  scr.appendChild(m); sc();
+  return m;
+}
+
+/* M1 — 축하 메시지. 키보드를 쓰는 유일한 미션이다.
+   판정은 아주 관대하게. 여기서 막히면 그걸로 끝이다 */
+const OK1 = /축하|축ㅎ|ㅊㅋ|ㅊㅎ|행복|사랑|결혼|축복|하트|잘\s*살|congrat|wedding|love|♥|❤|ㅋㅋ|ㅎㅎ|짝짝/i;
+function m1(){
+  return new Promise(res => {
+    const m = mission('AUTH 1 / 2', '차단하려면 인증 문구가 필요합니다.<br>&gt; <b>축하 메시지</b>를 입력하십시오.',
+      '무슨 말이든 좋습니다. 진심이면 통과합니다.');
+    let tries = 0;
+    ask('예) 축하해요!', v => {
+      tries++;
+      if(!v){ inp.focus(); return; }
+      const pass = OK1.test(v) || tries >= 3;
+      const echo = document.createElement('div');
+      echo.className = 'hi'; echo.textContent = '> ' + v;
+      scr.appendChild(echo); sc();
+      if(pass){
+        unask(); m.remove(); interactive = false;
+        res(v);
+      }else{
+        const n = document.createElement('div');
+        n.className = tries === 1 ? 'bad' : 'warn';
+        n.textContent = tries === 1
+          ? '인증 실패. 그건 축하가 아닙니다.'
+          : '인증 실패. 힌트 — 두 글자. "축", "하".';
+        scr.appendChild(n); sc();
+        beep(180, .18, 'sawtooth', .05);
+        inp.value = ''; inp.focus();
+      }
+    });
+  });
+}
+
+/* M2 — 연타. 키보드를 올리지 않고 손가락만 쓴다.
+   두드릴 때마다 하트가 떠오르고 심박 파형이 자란다 */
+function m2(){
+  return new Promise(res => {
+    const NEED = 15, LIMIT = 3000;
+    const m = mission('AUTH 2 / 2', '두 사람의 마음을 맞춰야 합니다.<br>&gt; 3초 안에 <b>15번</b> 두드리십시오.');
+    const sky = document.createElement('div'); sky.className = 'sky';
+    const ecg = document.createElement('div'); ecg.className = 'ecg';
+    const g   = document.createElement('div'); g.className = 'gauge';
+    const b   = document.createElement('button'); b.className = 'big'; b.textContent = '♥  두드리기';
+    m.appendChild(sky); m.appendChild(ecg); m.appendChild(g); m.appendChild(b);
+
+    let n = 0, timer = null, over = false, trace = '';
+    const draw = () => {
+      const f = Math.min(10, Math.round(n / NEED * 10));
+      g.innerHTML = '<b>[</b>' + '█'.repeat(f) + '░'.repeat(10 - f) + '<b>]</b>  ' + n + ' / ' + NEED;
+      ecg.textContent = trace.slice(-30);
+    };
+    /* 하트 하나를 띄운다. 다 오르면 스스로 사라진다 — 쌓이면 느려진다 */
+    const pop = () => {
+      if(REDUCED) return;
+      const s = document.createElement('span');
+      s.textContent = n % 3 === 0 ? '♡' : '♥';
+      s.style.left = (8 + Math.random() * 78) + '%';
+      s.style.fontSize = (12 + Math.random() * 10) + 'px';
+      s.style.setProperty('--drift', (Math.random() * 26 - 13) + 'px');
+      s.addEventListener('animationend', () => s.remove());
+      sky.appendChild(s);
+    };
+    draw();
+    const done = ok => {
+      if(over) return; over = true;
+      clearTimeout(timer); b.remove();
+      const d = document.createElement('div');
+      d.className = ok ? 'hi' : 'warn';
+      d.textContent = ok ? '심박수 일치. 인증되었습니다.'
+                         : '조금 늦었지만 — 그래도 마음은 전해졌습니다.';
+      m.appendChild(d); sc();
+      setTimeout(() => { m.remove(); interactive = false; res(ok); }, ok ? 800 : 1100);
+    };
+    b.onclick = () => {
+      if(over) return;
+      if(!n) timer = setTimeout(() => done(false), LIMIT);
+      n++; trace += '_/\\'; pop(); draw();
+      beep(760 + n * 22, .03, 'square', .04);
+      b.classList.remove('hit'); void b.offsetWidth; b.classList.add('hit');
+      if(n >= NEED) done(true);
+    };
+  });
+}
+
+/* ── 날짜 ─────────────────────────────────────────────────── */
+function fmtDate(iso){
+  const d = new Date(iso);
+  if(isNaN(d)) return { day:String(iso), time:'' };
+  const w = ['일','월','화','수','목','금','토'][d.getDay()];
+  const h = d.getHours(), ap = h < 12 ? '오전' : '오후', h12 = (h % 12) || 12, mi = d.getMinutes();
+  return {
+    day : d.getFullYear() + '년 ' + (d.getMonth()+1) + '월 ' + d.getDate() + '일 ' + w + '요일',
+    time: ap + ' ' + h12 + '시' + (mi ? ' ' + mi + '분' : '')
+  };
+}
+
+/* ── 아스키 청첩장 ────────────────────────────────────────
+   액자는 순수 ASCII 로만 그린다. 한글은 액자 안에 글자로 넣지 않고
+   flex 로 얹는다 — 한글은 영문 2배 폭이고, 박스 드로잉 문자는 폰트마다
+   폭이 갈려서 글자 수로 맞추면 반드시 삐뚤어진다 */
+const W = 38;
+const HEART = [
+  ' ###   ### ',
+  '##### #####',
+  '###########',
+  ' ######### ',
+  '  #######  ',
+  '   #####   ',
+  '    ###    ',
+  '     #     ',
+];
+function frameRow(html, cls){
+  const r = document.createElement('div');
+  r.className = 'fr' + (cls ? ' ' + cls : '');
+  r.innerHTML = '<span class="b">|</span><span class="c">' + (html || '') + '</span><span class="b">|</span>';
+  return r;
+}
+
+/* ── 두 사람이 걸어와 만나는 장면 ──────────────────────────
+   액자 안이므로 폭 38칸의 글자판에 직접 찍는다. 스프라이트를 따로 띄우면
+   줄 높이가 흐트러지지만, 글자판은 액자와 같은 격자를 쓰므로 어긋날 수 없다 */
+const SCN_H = 4;                       // 0 반짝임 · 1 머리 · 2 팔 · 3 다리
+const GROOM = [[' o ', '/|\\', '/ \\'], [' o ', '/|\\', '| |']];
+const BRIDE = [['(o)', '/|\\', '/_\\'], ['(o)', '\\|/', '/_\\']];
+/* 만나는 자리. 사이를 네 칸 비워 하트가 양쪽에 붙지 않게 한다 */
+const GX = 14, BX = 21;
+
+function sceneRow(){
+  const r = document.createElement('div');
+  r.className = 'fr';
+  r.innerHTML = '<span class="b">|</span><span class="c scn"></span><span class="b">|</span>';
+  return r;
+}
+function paint(rows, gx, bx, f, heart, spark){
+  const buf = [];
+  for(let y = 0; y < SCN_H; y++) buf.push(new Array(W).fill(' '));
+  const put = (x, y, s) => {
+    for(let i = 0; i < s.length; i++){
+      const c = x + i;
+      if(c >= 0 && c < W) buf[y][c] = s[i];
+    }
+  };
+  GROOM[f].forEach((s, i) => put(gx, i + 1, s));
+  BRIDE[f].forEach((s, i) => put(bx, i + 1, s));
+  if(heart) put(18, 2, heart);
+  if(spark) put(17, 0, spark);
+  rows.forEach((r, i) => { r.querySelector('.c').textContent = buf[i].join(''); });
+}
+async function stroll(rows){
+  const G0 = 0, B0 = W - 3;
+  if(instant()){ paint(rows, GX, BX, 0, '<3', '\\  /'); return; }
+  const STEPS = 16;
+  for(let i = 0; i <= STEPS; i++){
+    const p = i / STEPS;
+    paint(rows, Math.round(G0 + (GX - G0) * p), Math.round(B0 + (BX - B0) * p), i % 2, '', '');
+    sc();
+    if(instant()) break;
+    await wait(145);
+    beep(200 + (i % 2) * 40, .012, 'square', .015);   // 발소리
+  }
+  paint(rows, GX, BX, 0, '', '');
+  await wait(340);
+  paint(rows, GX, BX, 0, ' .', '');                   // 사이에서 뭔가 피어난다
+  await wait(220);
+  paint(rows, GX, BX, 0, '<3', '\\  /');
+  beep(1046, .16, 'triangle', .05);
+  /* 만난 뒤에는 가만히 서 있지 않는다 — 팔을 흔들고 반짝인다 */
+  if(!REDUCED){
+    const sway = () => {
+      idle = !idle;
+      paint(rows, GX, BX, idle ? 1 : 0, '<3', idle ? '/  \\' : '\\  /');
+      setTimeout(sway, 640);
+    };
+    setTimeout(sway, 640);
+  }
+}
+let idle = false;
+
+/* ── 하트 비 ───────────────────────────────────────────────
+   글자가 떨어지는 것이므로 캔버스가 아니라 글자로 만든다 */
+function rain(){
+  if(REDUCED || document.querySelector('#rain')) return;
+  const box = document.createElement('div'); box.id = 'rain';
+  for(let i = 0; i < 26; i++){
+    const s = document.createElement('span');
+    const r = Math.random();
+    s.textContent = r < .55 ? '♥' : r < .85 ? '♡' : '·';
+    if(r > .85) s.className = 'g';
+    s.style.left = (Math.random() * 98) + '%';
+    s.style.fontSize = (10 + Math.random() * 11) + 'px';
+    s.style.opacity = (.18 + Math.random() * .5).toFixed(2);
+    s.style.animationDuration = (4.5 + Math.random() * 5.5) + 's';
+    s.style.animationDelay = (-Math.random() * 8).toFixed(2) + 's';
+    box.appendChild(s);
+  }
+  document.body.appendChild(box);
+}
+
+async function card(){
+  const D = fmtDate(INVITE.date);
+  const wrap = document.createElement('div'); wrap.id = 'card';
+  const box  = document.createElement('div'); box.className = 'box';
+  wrap.appendChild(box); scr.appendChild(wrap);
+
+  const edge = () => {
+    const e = document.createElement('div');
+    e.className = 'edge'; e.textContent = '+' + '='.repeat(W) + '+';
+    return e;
+  };
+  const step = async list => {
+    for(const [html, cls] of list){
+      box.appendChild(frameRow(html, cls));
+      fit(); sc();
+      await wait(55);
+    }
+  };
+
+  box.appendChild(edge()); fit();
+  await step([
+    ['', ''],
+    ['<span class="lb">A C C E S S &nbsp; G R A N T E D</span>', ''],
+    ['', ''],
+  ]);
+
+  /* 하트 자리를 먼저 비워 둔다. 두 사람이 만난 뒤 아래에서 위로 채워야
+     하트가 그 자리에서 피어오르는 것처럼 보인다 */
+  const petals = HEART.map(() => { const r = frameRow(''); box.appendChild(r); return r; });
+  const scene  = [];
+  for(let i = 0; i < SCN_H; i++){ const r = sceneRow(); box.appendChild(r); scene.push(r); }
+  paint(scene, 0, W - 3, 0, '', '');
+  fit(); sc();
+  await wait(320);
+
+  await stroll(scene);                          // 걸어와서 만난다
+
+  rain();                                       // 하트 비
+  for(let i = HEART.length - 1; i >= 0; i--){   // 만난 자리에서 위로 피어난다
+    petals[i].querySelector('.c').innerHTML = '<span class="art">' + HEART[i] + '</span>';
+    sc();
+    await wait(75);
+  }
+  await wait(260);
+
+  await step([
+    ['', ''],
+    ['<span class="gr">W E D D I N G</span>', ''],
+    ['', ''],
+    ['<span class="nm">' + INVITE.groom.name + '</span>', ''],
+    ['<span class="lb">and</span>', ''],
+    ['<span class="nm">' + INVITE.bride.name + '</span>', ''],
+    ['', ''],
+    [D.day, 'h'],
+    [D.time, 'h'],
+    ['', ''],
+    [INVITE.place.name, 'h'],
+    [INVITE.place.hall, 'h'],
+    ['', ''],
+  ]);
+  box.appendChild(edge()); fit(); sc();
+
+  /* 버튼 */
+  const acts = document.createElement('div'); acts.id = 'acts';
+  if(INVITE.place.mapUrl){
+    const a = document.createElement('a');
+    a.href = INVITE.place.mapUrl; a.target = '_blank'; a.rel = 'noopener';
+    a.textContent = '[ 오시는 길 ]'; acts.appendChild(a);
+  }
+  const back = document.createElement('button');
+  back.className = 'sub'; back.textContent = '[ 청첩장으로 돌아가기 ]';
+  back.onclick = goBack;
+  acts.appendChild(back);
+
+  const again = document.createElement('button');
+  again.className = 'sub'; again.textContent = '[ 다시 해킹당하기 ]';
+  again.onclick = () => { location.href = location.pathname + '?k=' + encodeURIComponent(INVITE.code); };
+  acts.appendChild(again);
+
+  const sig = document.createElement('div');
+  sig.id = 'sig';
+  sig.innerHTML = INVITE.groom.parents + '의 ' + INVITE.groom.rel + ' ' + INVITE.groom.name + '<br>'
+                + INVITE.bride.parents + '의 ' + INVITE.bride.rel + ' ' + INVITE.bride.name;
+
+  scr.appendChild(acts); scr.appendChild(sig); sc();
+  try{ localStorage.setItem(KEY, '1'); }catch(e){}
+}
+/* 좁은 화면에서 액자가 넘치면 통째로 줄인다 */
+function fit(){
+  const box = document.querySelector('.box'); if(!box) return;
+  box.style.transform = 'none';
+  const avail = scr.clientWidth - 24, w = box.offsetWidth;
+  if(w > avail && w > 0) box.style.transform = 'scale(' + (avail / w).toFixed(4) + ')';
+}
+addEventListener('resize', fit);
+
+function goBack(){
+  if(INVITE.back) location.href = INVITE.back;
+  else if(history.length > 1) history.back();
+  else location.href = '../';
+}
+
+/* ── 전체 진행 ────────────────────────────────────────────── */
+let running = false, ended = false;
+async function run(){
+  if(running) return; running = true;
+  const s = ++seq;
+  await boot(s);
+  if(!alive(s)) return;
+
+  await m1(); if(!alive(s)) return;
+  restore('groom'); restore('bride');
+  await type('▣ 신랑·신부 이름 복구됨.', 'hi', 40); await wait(420);
+
+  await m2(); if(!alive(s)) return;
+  restore('date'); restore('place');
+  await type('▣ 예식 일시·장소 복구됨.', 'hi', 40); await wait(500);
+
+  await finish();
+}
+async function finish(){
+  if(ended) return;
+  ended = true; seq++;                  // 흐르던 연출이 있으면 여기서 끊긴다
+  interactive = false;
+  fast = false;                         // 건너뛰기로 왔더라도 청첩장은 보여 준다
+  unask();
+  $('#top').classList.remove('hot');
+  $('#host').textContent = 'wedding.invite — secure';
+  $('#skip').style.display = 'none';
+  if(panel) panel.classList.remove('hot');
+  await type('', '');
+  await type('침입이 차단되었습니다.', 'hi', 40);
+  await wait(260);
+  await type('축하해 주셔서 고맙습니다.', 'hi', 34);
+  await wait(420);
+  chord();
+  await card();
+}
+/* 우상단 건너뛰기 — 연출을 통째로 접고 청첩장으로 */
+$('#skip').onclick = () => {
+  if(ended) return;
+  fast = true; running = true;
+  unask();
+  scr.innerHTML = '';
+  panel = null;
+  finish();                            // 안에서 seq 를 올려 흐르던 연출을 끊는다
+};
+/* 화면을 누르면 흐르는 연출만 빨리 감기 — 청첩장이 그려지는 중에도 통한다.
+   미션 중이거나 버튼을 누른 것이면 빨리감기가 아니다 */
+scr.addEventListener('click', e => {
+  if(interactive) return;
+  if(e.target.closest('button,a,input')) return;
+  fast = true;
+});
+
+/* ── 게이트 ───────────────────────────────────────────────── */
+const gmsg = $('#gmsg'), gform = $('#gform'), gin = $('#gin'), ghint = $('#ghint'), gagain = $('#gagain');
+let gtries = 0;
+
+function openGate(){
+  const urlCode = (Q.get('k') || '').trim();
+  const passed  = urlCode.toUpperCase() === String(INVITE.code).toUpperCase();
+  let cleared = false;
+  try{ cleared = localStorage.getItem(KEY) === '1'; }catch(e){}
+
+  const start = () => { gate.classList.add('out'); setTimeout(() => gate.remove(), 520); run(); };
+  const same  = v => v.toUpperCase() === String(INVITE.code).toUpperCase();
+
+  /* 재방문 경로로 들어와도 코드 입력이 살아 있어야 한다. 먼저 걸어 둔다 */
+  gform.addEventListener('submit', e => {
+    e.preventDefault();
+    const v = gin.value.trim();
+    gtries++;
+    if(same(v) || gtries >= 3){
+      gform.classList.remove('on'); gin.blur();
+      gmsg.innerHTML = same(v) ? '코드 확인. 접속합니다.' : '…들여보내 드리겠습니다.';
+      beep(1046, .12, 'triangle', .05);
+      setTimeout(start, 620);
+    }else{
+      gmsg.innerHTML = '<span style="color:#ff4d4d">코드가 다릅니다.</span>';
+      beep(180, .18, 'sawtooth', .05);
+      gin.value = ''; gin.focus();
+    }
+  });
+
+  /* 두 번째 방문. 8초짜리 연출을 또 보여주는 건 고문이다 */
+  if(cleared && !Q.get('force')){
+    gmsg.innerHTML = '이미 한 번 막아 내셨습니다.';
+    gagain.classList.add('on');
+    $('#gre').onclick   = () => { gagain.classList.remove('on'); passed ? start() : askCode(); };
+    $('#gskip').onclick = () => { gate.classList.add('out'); setTimeout(() => gate.remove(), 520); finish(); };
+    return;
+  }
+  if(passed){
+    gmsg.innerHTML = '[ 화면을 누르십시오 ]';
+    gate.addEventListener('click', start, { once:true });
+    return;
+  }
+  gmsg.innerHTML = '[ 화면을 누르십시오 ]';
+  gate.addEventListener('click', function once(e){
+    if(e.target.closest('#gform')) return;
+    gate.removeEventListener('click', once);
+    askCode();
+  });
+
+  function askCode(){
+    gmsg.innerHTML = '접속 코드가 필요합니다.';
+    gform.classList.add('on');
+    setTimeout(() => gin.focus(), 80);
+    /* 코드에서 막히면 그걸로 끝이다. 3초 뒤 힌트를 흘린다 */
+    setTimeout(() => {
+      const c = String(INVITE.code);
+      ghint.textContent = '힌트 — ' + c[0] + '_'.repeat(Math.max(0, c.length - 1)) + '  (' + c.length + '글자)';
+      ghint.classList.add('on');
+    }, 3000);
+  }
+}
+
+/* ── 모바일 마감 ──────────────────────────────────────────── */
+/* 키보드가 올라오면 화면 절반이 사라진다. 입력줄이 그 위에 남아 있어야 한다 */
+const vv = window.visualViewport;
+if(vv){
+  const sync = () => {
+    document.body.style.height = vv.height + 'px';
+    const g = document.querySelector('#gate');
+    if(g) g.style.height = vv.height + 'px';
+    window.scrollTo(0, 0);
+    sc(); fit();
+  };
+  vv.addEventListener('resize', sync);
+  vv.addEventListener('scroll', () => window.scrollTo(0, 0));
+}
+/* 위로 스크롤하면 자동 따라가기를 끈다 */
+scr.addEventListener('scroll', () => {
+  stick = scr.scrollHeight - scr.scrollTop - scr.clientHeight < 44;
+});
+/* 개발용 — 콘솔에서 hack.end() / hack.reset() / hack.state() */
+window.hack = {
+  end   : () => finish(),
+  reset : () => { try{ localStorage.removeItem(KEY); }catch(e){} location.href = location.pathname; },
+  code  : () => INVITE.code,
+  state : () => ({ fast, ended, interactive, seq }),
+};
+
+if(Q.get('skip')){ gate.remove(); finish(); }
+else openGate();
+</script>
+</body></html>
