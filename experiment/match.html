@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>짝맞추기 · 웨딩 카드</title>
+<style>
+  :root {
+    --bg: #101219;
+    --panel: #171a24;
+    --line: #262b3a;
+    --text: #d9dce6;
+    --dim: #6f7689;
+    --accent: #e8c07a;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--text);
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+    overscroll-behavior: none;
+  }
+  /* 세로를 flex 로 나눠 stage 가 남는 만큼 차지하게 한다. 타일 크기는 innerHeight 를
+     짐작해서 빼는 대신 stage 의 실제 크기를 읽어서 정한다 — 모바일 주소창 때문에
+     innerHeight 는 스크롤할 때마다 달라진다.
+     dvh 를 모르는 구형 브라우저를 위해 vh 를 먼저 적어 둔다. */
+  body {
+    display: flex; flex-direction: column; align-items: center;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  header { flex: 0 0 auto; width: 100%; max-width: 640px; padding: 10px 12px 0; }
+  h1 { margin: 0 0 8px; font-size: 14px; font-weight: 600; letter-spacing: .02em; }
+  h1 small { color: var(--dim); font-weight: 400; margin-left: 6px; }
+
+  /* 난이도는 한 번 고르면 잘 안 바꾼다. 통계 줄과 나눠 놓아야 폰에서 안 넘친다. */
+  .diff { display: flex; gap: 6px; margin-bottom: 6px; }
+  .diff button {
+    flex: 1; padding: 7px 0; font-size: 12px; font-family: inherit;
+    background: var(--panel); color: var(--dim);
+    border: 1px solid var(--line); border-radius: 7px; cursor: pointer;
+  }
+  .diff button.on { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; }
+
+  .status {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 10px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 7px;
+    font-size: 13px; font-variant-numeric: tabular-nums;
+  }
+  .status .grow { flex: 1; }
+  .status b { font-weight: 600; color: #fff; }
+  .status .best { color: var(--dim); font-size: 12px; }
+  .status .tool {
+    padding: 6px 10px; font-size: 12px; font-family: inherit;
+    background: transparent; color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px; cursor: pointer;
+  }
+
+  .stage {
+    position: relative;
+    flex: 1 1 auto; min-height: 0; width: 100%;
+    display: flex; align-items: center; justify-content: center;
+    padding: 8px; overflow: auto;
+  }
+  #board { position: relative; flex: 0 0 auto; }
+
+  /* 미리보기 안내. 판 위에 겹쳐 두면 카드를 가리니 stage 아래쪽에 띄운다. */
+  .peek {
+    position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%);
+    display: none; white-space: nowrap;
+    padding: 6px 12px; border-radius: 999px;
+    background: rgba(232,192,122,.14); border: 1px solid rgba(232,192,122,.4);
+    color: var(--accent); font-size: 12px; font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+  .peek.on { display: block; }
+
+  /* 뒤집기는 3D 회전이다. 두 면을 겹쳐 놓고 뒷면을 감춘다. */
+  .tile { position: absolute; cursor: pointer; -webkit-perspective: 620px; perspective: 620px; }
+  .tile .inner {
+    position: relative; width: 100%; height: 100%;
+    -webkit-transform-style: preserve-3d; transform-style: preserve-3d;
+    transition: transform .34s cubic-bezier(.3,.7,.3,1);
+  }
+  .tile.up .inner { transform: rotateY(180deg); }
+  .face {
+    position: absolute; left: 0; top: 0; width: 100%; height: 100%;
+    border-radius: 6px;
+    -webkit-backface-visibility: hidden; backface-visibility: hidden;
+    box-shadow: inset 0 -2px 0 rgba(0,0,0,.28);
+    background-repeat: no-repeat;
+    transition: filter .3s ease;
+  }
+  .face.back { background-image: url(cards/back.png); background-size: 100% 100%; }
+  .face.front { transform: rotateY(180deg); }
+
+  /* 맞춘 짝은 판에 남겨 둔다 — 지워 버리면 내가 뭘 찾았는지 되짚을 수가 없다.
+     흐리게만 하면 어두운 바탕에서 티가 안 난다. 색을 빼는 편이 확실하다 —
+     카드를 가르는 가장 센 단서가 원색 테두리인데, 회색이 되면 한눈에 걸러진다.
+     filter 는 face 에만 건다. inner 에 걸면 preserve-3d 가 풀리는 브라우저가 있다. */
+  .tile.done { pointer-events: none; }
+  .tile.done .inner { transform: rotateY(180deg) scale(.88); }
+  .tile.done .face.front { filter: grayscale(1) brightness(.5); box-shadow: none; }
+  .tile.pop .inner { animation: pop .34s ease; }
+  @keyframes pop { 40% { transform: rotateY(180deg) scale(1.1); } }
+  .tile.miss .inner { animation: shake .3s ease; }
+  @keyframes shake {
+    25% { transform: rotateY(180deg) translateX(-4px); }
+    75% { transform: rotateY(180deg) translateX(4px); }
+  }
+
+  .sheet {
+    position: fixed; left: 0; top: 0; right: 0; bottom: 0; display: none;
+    align-items: center; justify-content: center;
+    background: rgba(8,9,13,.82); z-index: 50; padding: 20px;
+  }
+  .sheet.on { display: flex; }
+  .sheet .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 22px 24px; text-align: center; max-width: 320px; width: 100%;
+  }
+  .sheet h2 { margin: 0 0 8px; font-size: 17px; }
+  .sheet p { margin: 0 0 16px; font-size: 13px; color: var(--dim); line-height: 1.7; }
+  .sheet p b { color: var(--accent); font-variant-numeric: tabular-nums; }
+  .sheet button {
+    width: 100%; padding: 11px 0; font-size: 14px; font-family: inherit; font-weight: 600;
+    background: var(--accent); color: var(--bg);
+    border: 0; border-radius: 8px; cursor: pointer;
+  }
+
+  /* 설명은 접어 둔다. 펼쳐 두면 작은 폰에서 타일이 그만큼 작아진다. */
+  footer { flex: 0 0 auto; width: 100%; max-width: 640px; padding: 0 12px 10px; }
+  footer summary {
+    font-size: 12px; color: var(--dim); cursor: pointer; padding: 4px 0; list-style: none;
+  }
+  footer summary::-webkit-details-marker { display: none; }
+  footer summary::before { content: '？ '; }
+  footer .body { font-size: 12px; color: var(--dim); line-height: 1.8; padding-bottom: 6px; }
+
+  @media (max-height: 720px) {
+    h1 { display: none; }
+    header { padding-top: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>짝맞추기 <small>뒤집어서 같은 카드를 찾는다</small></h1>
+  <div class="diff" id="diff"></div>
+  <div class="status">
+    <span>시간 <b id="clock">00:00</b></span>
+    <span>뒤집기 <b id="moves">0</b></span>
+    <span class="grow"></span>
+    <span class="best" id="best"></span>
+    <button class="tool" id="again">새 판</button>
+  </div>
+</header>
+
+<div class="stage">
+  <div id="board"></div>
+  <div class="peek" id="peek"><b id="peekN">3</b>초 뒤 덮입니다 · 누르면 바로 시작</div>
+</div>
+
+<footer>
+  <details>
+    <summary>규칙</summary>
+    <div class="body">
+      판을 깔면 잠깐 모든 카드를 보여 준다. 다 외웠으면 눌러서 바로 시작해도 된다 &mdash;
+      이때는 시계도 뒤집기 횟수도 올라가지 않는다.<br>
+      카드를 두 장 뒤집어 같으면 그대로 두고, 다르면 도로 덮인다.
+      모두 찾으면 끝. <b>뒤집기 횟수</b>가 적을수록 잘한 것이다 &mdash;
+      최소 기록은 난이도마다 따로 남는다.
+    </div>
+  </details>
+</footer>
+
+<div class="sheet" id="sheet">
+  <div class="card">
+    <h2>모두 찾았다</h2>
+    <p id="sheetBody"></p>
+    <button id="sheetAgain">한 판 더</button>
+  </div>
+</div>
+
+<script>
+/* 카드 리소스는 사천성과 같은 것을 쓴다 — cards/sheet.png 한 장에 96x120 카드 10종.
+   사진을 늘리면 SHEET.cols 와 KINDS 만 고치면 된다. */
+const SHEET = { src: 'cards/sheet.png', cols: 5 };
+const KINDS = 10;
+
+/* 난이도. rows/cols 는 [행, 열] 이고 곱하면 kinds*2 가 되어야 한다.
+   폰은 세로가 기니까 열을 줄이고, 데스크톱은 반대로 눕힌다. */
+const LEVELS = [
+  { key: 'easy', name: '쉬움', kinds: 4,  narrow: [4, 2], wide: [2, 4], peek: 2000 },
+  { key: 'mid',  name: '보통', kinds: 8,  narrow: [4, 4], wide: [4, 4], peek: 3000 },
+  { key: 'hard', name: '어려움', kinds: 10, narrow: [5, 4], wide: [4, 5], peek: 4000 },
+];
+
+function paintFront(el, kind, w, h) {
+  const cx = kind % SHEET.cols, cy = Math.floor(kind / SHEET.cols);
+  const sheetRows = Math.ceil(KINDS / SHEET.cols);
+  el.style.backgroundImage = 'url(' + SHEET.src + ')';
+  el.style.backgroundSize = (SHEET.cols * w) + 'px ' + (sheetRows * h) + 'px';
+  el.style.backgroundPosition = (-cx * w) + 'px ' + (-cy * h) + 'px';
+}
+
+/* ── 판 ─────────────────────────────────────────────────────── */
+
+let level = LEVELS[1];
+let rows = 4, cols = 4;
+let deck = [];          // 자리마다 어떤 종류인지
+let tiles = [];         // 자리마다 DOM
+let matched = [];       // 자리마다 맞췄는지
+let opened = [];        // 지금 뒤집혀 있는 자리 (최대 2)
+let locked = false;     // 안 맞은 두 장을 도로 덮는 동안 입력을 막는다
+let peeking = false;    // 시작 미리보기 중
+let moves = 0, remain = 0;
+let t0 = 0, timer = null;
+/* 새 판을 깔아도 앞 판에서 걸어 둔 setTimeout 은 살아 있다. 그게 뒤늦게 터지면
+   미리보기 중인 새 카드를 덮어 버린다. 판마다 번호를 매겨 남의 판 일은 무시한다. */
+let round = 0;
+
+function shuffled(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.random() * (i + 1) | 0;
+    const t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  return a;
+}
+
+function makeDeck() {
+  /* 매번 같은 사진만 나오면 쉬움이 지루해진다. 10종에서 필요한 만큼 골라 쓴다. */
+  const all = shuffled([...Array(KINDS).keys()]).slice(0, level.kinds);
+  const d = [];
+  for (const k of all) d.push(k, k);
+  return shuffled(d);
+}
+
+/* ── 크기 ───────────────────────────────────────────────────── */
+
+let cellW = 64, cellH = 80, gap = 8;
+const STAGE_PAD = 8;     // .stage 의 padding 과 맞춰 둔다
+const RATIO = 1.25;      // 세로/가로. 원본 카드가 96x120 이다
+const MAX_W = 96;        // 원본보다 키우면 흐려진다
+
+/* 사진은 비율이 틀어지면 인물이 찌그러진다. 비율을 먼저 지키고 가로를 줄인다. */
+function fit(availW, availH, g) {
+  const byW = (availW - (cols - 1) * g) / cols;
+  const byH = (availH - (rows - 1) * g) / rows;
+  const w = Math.floor(Math.min(byW, byH / RATIO));
+  return Math.max(28, Math.min(w, MAX_W));
+}
+
+function measure() {
+  const stage = document.querySelector('.stage');
+  let availW = stage.clientWidth - STAGE_PAD * 2;
+  let availH = stage.clientHeight - STAGE_PAD * 2;
+  /* 첫 그리기에서 stage 크기가 0 으로 읽히는 브라우저가 있다. 그때는 창 크기로 잡는다. */
+  if (availW <= 0) availW = window.innerWidth - STAGE_PAD * 2;
+  if (availH <= 0) availH = window.innerHeight * 0.6;
+
+  /* 간격을 고정하면 카드가 클 때 답답하고 작을 때 판이 안 들어간다. 카드에 비례시키되,
+     간격이 바뀌면 카드도 바뀌니 값이 멎을 때까지 몇 번 되풀이한다. */
+  let g = 8;
+  for (let i = 0; i < 4; i++) {
+    const ng = Math.max(4, Math.round(fit(availW, availH, g) * 0.11));
+    if (ng === g) break;
+    g = ng;
+  }
+  gap = g;
+  cellW = fit(availW, availH, g);
+  cellH = Math.floor(cellW * RATIO);
+}
+
+function layout() {
+  const board = document.getElementById('board');
+  board.style.width = (cols * cellW + (cols - 1) * gap) + 'px';
+  board.style.height = (rows * cellH + (rows - 1) * gap) + 'px';
+  for (let i = 0; i < tiles.length; i++) {
+    const el = tiles[i];
+    const r = Math.floor(i / cols), c = i % cols;
+    el.style.width = cellW + 'px';
+    el.style.height = cellH + 'px';
+    el.style.left = c * (cellW + gap) + 'px';
+    el.style.top = r * (cellH + gap) + 'px';
+    paintFront(el.querySelector('.front'), deck[i], cellW, cellH);
+  }
+}
+
+function render() {
+  const board = document.getElementById('board');
+  board.innerHTML = '';
+  tiles = [];
+  for (let i = 0; i < deck.length; i++) {
+    const el = document.createElement('div');
+    el.className = 'tile';
+    el.innerHTML = '<div class="inner"><div class="face back"></div><div class="face front"></div></div>';
+    el.addEventListener('click', () => flip(i));
+    board.appendChild(el);
+    tiles.push(el);
+  }
+  measure();
+  layout();
+}
+
+/* ── 진행 ───────────────────────────────────────────────────── */
+
+/* ── 미리보기 ───────────────────────────────────────────────── */
+
+/* 원조 보드게임에는 없는 규칙이지만, 디지털판은 대개 시작에 한 번 보여 준다.
+   우리 카드는 같은 두 사람 사진이라 더 필요하다 — 사과·자동차처럼 저절로
+   구분되지 않아서, 한 번 훑어 두지 않으면 시작부터 막막하다.
+   미리보기 동안에는 시계도 뒤집기 횟수도 올라가지 않는다. */
+let peekEnd = null, peekTick = null;
+
+function peek() {
+  const pill = document.getElementById('peek');
+  const my = round;
+  peeking = true;
+  for (const el of tiles) el.classList.add('up');
+
+  let n = Math.ceil(level.peek / 1000);
+  document.getElementById('peekN').textContent = n;
+  pill.classList.add('on');
+  peekTick = setInterval(() => {
+    if (--n > 0) document.getElementById('peekN').textContent = n;
+  }, 1000);
+  peekEnd = setTimeout(() => { if (round === my) endPeek(); }, level.peek);
+}
+
+function endPeek() {
+  if (!peeking) return;
+  peeking = false;
+  clearTimeout(peekEnd); clearInterval(peekTick);
+  peekEnd = peekTick = null;
+  document.getElementById('peek').classList.remove('on');
+  for (const el of tiles) el.classList.remove('up');
+}
+
+/* ── 진행 ───────────────────────────────────────────────────── */
+
+function flip(i) {
+  /* 미리보기 중에 카드를 누르면 그 카드가 뒤집히는 게 아니라 미리보기가 끝난다.
+     "다 외웠으니 시작" 이라는 뜻으로 누르는 것이기 때문이다. */
+  if (peeking) { endPeek(); return; }
+  if (locked || matched[i] || opened.indexOf(i) >= 0) return;
+  if (!timer) startClock();
+
+  tiles[i].classList.add('up');
+  opened.push(i);
+  if (opened.length < 2) return;
+
+  moves++;
+  document.getElementById('moves').textContent = moves;
+  const [a, b] = opened;
+  const my = round;
+
+  if (deck[a] === deck[b]) {
+    matched[a] = matched[b] = true;
+    opened = [];
+    remain--;
+    /* 맞춘 직후에 클래스를 바꾸면 뒤집는 중간에 튄다. 회전이 끝난 뒤에 준다. */
+    setTimeout(() => {
+      if (round !== my) return;
+      tiles[a].classList.add('pop');
+      tiles[b].classList.add('pop');
+      setTimeout(() => {
+        if (round !== my) return;
+        tiles[a].classList.add('done');
+        tiles[b].classList.add('done');
+      }, 300);
+    }, 340);
+    if (!remain) setTimeout(() => { if (round === my) win(); }, 800);
+    return;
+  }
+
+  locked = true;
+  setTimeout(() => {
+    if (round !== my) return;
+    tiles[a].classList.add('miss');
+    tiles[b].classList.add('miss');
+  }, 340);
+  setTimeout(() => {
+    if (round !== my) return;
+    for (const j of opened) {
+      tiles[j].classList.remove('up', 'miss');
+    }
+    opened = [];
+    locked = false;
+  }, 900);
+}
+
+function startClock() {
+  t0 = Date.now();
+  timer = setInterval(() => {
+    document.getElementById('clock').textContent = fmt(Date.now() - t0);
+  }, 500);
+}
+
+function stopClock() {
+  if (timer) clearInterval(timer);
+  timer = null;
+}
+
+function fmt(ms) {
+  const s = Math.floor(ms / 1000);
+  return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+}
+
+/* ── 기록 ───────────────────────────────────────────────────── */
+
+function bestKey() { return 'match.best.' + level.key; }
+
+function loadBest() {
+  try { return JSON.parse(localStorage.getItem(bestKey())); } catch (e) { return null; }
+}
+
+function showBest() {
+  const b = loadBest();
+  document.getElementById('best').textContent = b ? '최고 ' + b.moves + '번 · ' + fmt(b.ms) : '';
+}
+
+/* 기억력 게임의 실력은 시간이 아니라 뒤집은 횟수다. 같은 횟수면 빠른 쪽이 낫다. */
+function better(a, b) {
+  if (!b) return true;
+  if (a.moves !== b.moves) return a.moves < b.moves;
+  return a.ms < b.ms;
+}
+
+function win() {
+  stopClock();
+  const ms = Date.now() - t0;
+  const rec = { moves: moves, ms: ms };
+  const old = loadBest();
+  const fresh = better(rec, old);
+  if (fresh) { try { localStorage.setItem(bestKey(), JSON.stringify(rec)); } catch (e) {} }
+  showBest();
+
+  const perfect = level.kinds;   // 모든 자리를 기억했다면 이 횟수로 끝난다
+  let body = '<b>' + fmt(ms) + '</b> 만에 <b>' + moves + '번</b> 뒤집었다.';
+  if (moves === perfect) body += '<br>한 번도 헛짚지 않았다.';
+  else body += '<br>최소 ' + perfect + '번이면 되는 판이다.';
+  if (fresh && old) body += '<br>최고 기록을 갱신했다.';
+  document.getElementById('sheetBody').innerHTML = body;
+  document.getElementById('sheet').classList.add('on');
+}
+
+/* ── 시작 ───────────────────────────────────────────────────── */
+
+function start() {
+  round++;
+  stopClock();
+  clearTimeout(peekEnd); clearInterval(peekTick);
+  peeking = false;
+  document.getElementById('peek').classList.remove('on');
+  document.getElementById('sheet').classList.remove('on');
+  const d = window.innerWidth >= 760 ? level.wide : level.narrow;
+  rows = d[0]; cols = d[1];
+  deck = makeDeck();
+  matched = deck.map(() => false);
+  opened = [];
+  locked = false;
+  moves = 0;
+  remain = level.kinds;
+  document.getElementById('moves').textContent = '0';
+  document.getElementById('clock').textContent = '00:00';
+  showBest();
+  render();
+  peek();
+}
+
+function setLevel(lv) {
+  level = lv;
+  try { localStorage.setItem('match.level', lv.key); } catch (e) {}
+  for (const btn of document.querySelectorAll('#diff button'))
+    btn.classList.toggle('on', btn.dataset.key === lv.key);
+  start();
+}
+
+const diffBar = document.getElementById('diff');
+for (const lv of LEVELS) {
+  const btn = document.createElement('button');
+  btn.textContent = lv.name + ' ' + lv.kinds;
+  btn.dataset.key = lv.key;
+  btn.addEventListener('click', () => setLevel(lv));
+  diffBar.appendChild(btn);
+}
+
+/* 카드 사이 빈 곳을 눌러도 미리보기를 끝낼 수 있어야 한다. 카드만 받으면
+   "아무 데나 누르면 되겠지" 하고 누른 사람은 아무 반응을 못 본다. */
+document.querySelector('.stage').addEventListener('click', () => { if (peeking) endPeek(); });
+
+document.getElementById('again').addEventListener('click', start);
+document.getElementById('sheetAgain').addEventListener('click', start);
+
+/* 화면이 돌아가면 열 수가 바뀔 수 있다. 판은 그대로 두고 자리만 다시 잡는다. */
+let resizeT = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeT);
+  resizeT = setTimeout(() => {
+    const d = window.innerWidth >= 760 ? level.wide : level.narrow;
+    rows = d[0]; cols = d[1];
+    measure();
+    layout();
+  }, 120);
+});
+
+let saved = null;
+try { saved = localStorage.getItem('match.level'); } catch (e) {}
+setLevel(LEVELS.find(l => l.key === saved) || LEVELS[1]);
+</script>
+</body>
+</html>
