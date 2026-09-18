@@ -12,3 +12,18 @@ desktop.ini
 # 에디터
 .vscode/
 .idea/
+
+# 일렉트론 프로토타입
+node_modules/
+
+# 파이썬
+__pycache__/
+
+# 원본 사진 — 공개 저장소에 올라가면 안 된다.
+# tools/make_cards.py 로 줄인 결과물(experiment/cards/)만 커밋한다.
+tools/1/
+tools/photos/
+main.jpg
+
+# 얼굴 검출 모델. 없으면 make_cards.py 가 받는 주소를 알려준다.
+tools/yunet.onnx
