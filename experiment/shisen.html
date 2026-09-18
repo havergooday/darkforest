@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>사천성 · 블럭 실험</title>
+<style>
+  :root {
+    --bg: #101219;
+    --panel: #171a24;
+    --line: #262b3a;
+    --text: #d9dce6;
+    --dim: #6f7689;
+    --accent: #e8c07a;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--text);
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+    overscroll-behavior: none;
+  }
+  /* 세로를 flex 로 나눠 stage 가 남는 만큼 차지하게 한다. 타일 크기는 innerHeight 를
+     짐작해서 빼는 대신 stage 의 실제 크기를 읽어서 정한다 — 모바일 주소창 때문에
+     innerHeight 는 스크롤할 때마다 달라진다. */
+  body {
+    display: flex; flex-direction: column; align-items: center;
+    height: 100dvh; overflow: hidden;
+  }
+
+  header { flex: 0 0 auto; width: 100%; max-width: 640px; padding: 10px 12px 0; }
+  h1 { margin: 0 0 8px; font-size: 14px; font-weight: 600; letter-spacing: .02em; }
+  h1 small { color: var(--dim); font-weight: 400; margin-left: 6px; }
+
+  .status {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 10px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 7px;
+    font-size: 13px; font-variant-numeric: tabular-nums;
+  }
+  .status .grow { flex: 1; }
+  .status b { font-weight: 600; color: #fff; }
+  .status .tool {
+    padding: 6px 10px; font-size: 12px; font-family: inherit;
+    background: transparent; color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px; cursor: pointer;
+  }
+  .status .tool:disabled { color: #3c4254; cursor: default; }
+
+  .stage {
+    flex: 1 1 auto; min-height: 0; width: 100%;
+    display: flex; align-items: center; justify-content: center;
+    padding: 8px; overflow: auto;
+  }
+  #board { position: relative; flex: 0 0 auto; }
+  #wire { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+
+  .tile {
+    position: absolute; border-radius: 6px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform .09s ease, box-shadow .09s ease, opacity .16s ease;
+    box-shadow: inset 0 -2px 0 rgba(0,0,0,.28);
+  }
+  .tile.sel { transform: translateY(-2px) scale(1.06); z-index: 5;
+              box-shadow: 0 0 0 2px #fff, inset 0 -2px 0 rgba(0,0,0,.28); }
+  .tile.hint { animation: pulse .5s ease-in-out 3; }
+  .tile.gone { opacity: 0; transform: scale(.5); pointer-events: none; }
+  @keyframes pulse { 50% { transform: translateY(-3px) scale(1.09); } }
+
+  .sheet {
+    position: fixed; inset: 0; display: none;
+    align-items: center; justify-content: center;
+    background: rgba(8,9,13,.82); z-index: 50; padding: 20px;
+  }
+  .sheet.on { display: flex; }
+  .sheet .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 22px 24px; text-align: center; max-width: 320px; width: 100%;
+  }
+  .sheet h2 { margin: 0 0 8px; font-size: 17px; }
+  .sheet p { margin: 0 0 16px; font-size: 13px; color: var(--dim); line-height: 1.7; }
+  .sheet p b { color: var(--accent); font-variant-numeric: tabular-nums; }
+  .sheet button {
+    width: 100%; padding: 11px 0; font-size: 14px; font-family: inherit; font-weight: 600;
+    background: var(--accent); color: var(--bg);
+    border: 0; border-radius: 8px; cursor: pointer;
+  }
+  .sheet button.ghost { background: transparent; color: var(--dim); border: 1px solid var(--line); margin-top: 8px; font-weight: 400; }
+
+  /* 설명은 접어 둔다. 펼쳐 두면 작은 폰에서 90px 가까이 먹어 타일이 그만큼 작아진다. */
+  footer { flex: 0 0 auto; width: 100%; max-width: 640px; padding: 0 12px 10px; }
+  footer summary {
+    font-size: 12px; color: var(--dim); cursor: pointer; padding: 4px 0;
+    list-style: none;
+  }
+  footer summary::-webkit-details-marker { display: none; }
+  footer summary::before { content: '？ '; }
+  footer .body { font-size: 12px; color: var(--dim); line-height: 1.8; padding-bottom: 6px; }
+  footer code { color: #8d94a8; }
+
+  /* 세로가 짧은 폰에서는 머리말을 접는다. 여기서 아낀 25px 이 그대로 타일 크기가 된다. */
+  @media (max-height: 720px) {
+    h1 { display: none; }
+    header { padding-top: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>사천성 · 블럭 <small>연결 판정 · 판 생성 실험</small></h1>
+  <div class="status">
+    <span>남은 <b id="left">0</b></span>
+    <span>시간 <b id="clock">00:00</b></span>
+    <span class="grow"></span>
+    <button class="tool" id="hint">힌트</button>
+    <button class="tool" id="shuffle">섞기</button>
+    <button class="tool" id="again">새 판</button>
+  </div>
+</header>
+
+<div class="stage">
+  <div id="board"><svg id="wire"></svg></div>
+</div>
+
+<footer>
+  <details>
+    <summary>규칙</summary>
+    <div class="body">
+      같은 블럭 두 개를 고르면 <b>세 번 이하로 꺾이는 선</b>으로 이어질 때 사라진다.
+      선은 빈 칸과 판 바깥으로만 지나간다.<br>
+      판은 항상 풀 수 있게 만들어진다 &mdash; 짝을 거꾸로 놓아가며 생성하기 때문이다.
+      막히면 <code>섞기</code>가 남은 블럭을 다시 풀 수 있는 배치로 바꾼다.
+    </div>
+  </details>
+</footer>
+
+<div class="sheet" id="sheet">
+  <div class="card">
+    <h2 id="sheetTitle">완성</h2>
+    <p id="sheetBody"></p>
+    <button id="sheetGo">새 판</button>
+    <button class="ghost" id="sheetClose">닫기</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ────────────────────────────────────────────────────────────
+   사진 카드. tools/make_cards.py 가 만든 스프라이트 시트에서 잘라 쓴다.
+
+   사진 장수를 늘리면 KINDS 와 판 크기만 바꾸면 된다. 타일 수는 KINDS*4 이고
+   NARROW·WIDE 는 [행, 열] 이다. 16장이면 KINDS=16, [8,8] / [8,8] 식.
+   ──────────────────────────────────────────────────────────── */
+const SHEET = { src: 'cards/sheet.png', cols: 5 };   // 시트 가로에 카드 몇 장인지
+const KINDS = 10;
+const NARROW = [8, 5];    // 폰      — 40장을 5열 8행
+const WIDE = [4, 10];     // 데스크톱 — 40장을 10열 4행
+
+function paintTile(el, kind, w, h) {
+  const cx = kind % SHEET.cols, cy = Math.floor(kind / SHEET.cols);
+  const sheetRows = Math.ceil(KINDS / SHEET.cols);
+  el.style.backgroundImage = 'url(' + SHEET.src + ')';
+  el.style.backgroundSize = (SHEET.cols * w) + 'px ' + (sheetRows * h) + 'px';
+  el.style.backgroundPosition = (-cx * w) + 'px ' + (-cy * h) + 'px';
+  /* 카드 원본 96px 을 타일 크기로 '줄여서' 그리므로 pixelated 를 쓰면 픽셀이
+     불규칙하게 버려져 지저분해진다. 색이 이미 48색으로 뭉쳐 있어서 부드럽게
+     줄여도 레트로 느낌은 남는다. */
+  el.style.imageRendering = 'auto';
+}
+
+/* ────────────────────────────────────────────────────────────
+   판. 테두리 한 줄을 빈 칸으로 덧대 두면 선이 판 바깥으로 돌아갈 수 있다.
+   좌표는 1..rows, 1..cols 를 쓰고 0 행·열과 rows+1, cols+1 은 늘 빈 칸이다.
+   ──────────────────────────────────────────────────────────── */
+const EMPTY = -1;
+const DR = [-1, 1, 0, 0];
+const DC = [0, 0, -1, 1];
+
+let rows = 8, cols = 8, kindCount = 16;
+let grid = null;
+let tiles = new Map();          // "r,c" -> element
+let sel = null;
+let left = 0;
+let started = 0, ticker = null, busy = false;
+
+function key(r, c) { return r + ',' + c; }
+function blank() {
+  const g = [];
+  for (let r = 0; r < rows + 2; r++) g.push(new Array(cols + 2).fill(EMPTY));
+  return g;
+}
+function shuffled(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/* 연결 판정. 직진은 꺾임 0, 방향을 바꾸면 1. 꺾임 2번(선 3개)까지만 간다.
+
+   판 하나 만드는 데 수천 번 불린다. 매번 배열을 새로 만들면 그것만으로 1초가
+   넘어가서, 버퍼 한 벌을 돌려 쓰고 방문 표시는 지우는 대신 세대 번호로 무효화한다.
+   꺾임 수가 0·1·2 뿐이라 단계별로 처리하면 우선순위 큐도 필요 없다. */
+let bufR = 0, bufC = 0;
+let dTurn, dSeen, dFromR, dFromC, dFromD, dGen = 0;
+
+function ensureBuf() {
+  const R = rows + 2, C = cols + 2;
+  if (R === bufR && C === bufC) return;
+  bufR = R; bufC = C;
+  const n = R * C * 4;
+  dTurn = new Int8Array(n);
+  dSeen = new Int32Array(n);
+  dFromR = new Int16Array(n);
+  dFromC = new Int16Array(n);
+  dFromD = new Int8Array(n);
+  dGen = 0;
+}
+
+/* 목적지(tr,tc)는 블럭이 있어도 지나갈 수 있다. 판을 만들 때는 -1,-1 을 준다. */
+function search(g, r0, c0, tr, tc) {
+  ensureBuf();
+  const R = bufR, C = bufC;
+  const gen = ++dGen;
+  let cur = [], next = [];
+
+  for (let d = 0; d < 4; d++) {
+    const nr = r0 + DR[d], nc = c0 + DC[d];
+    if (nr < 0 || nc < 0 || nr >= R || nc >= C) continue;
+    if (g[nr][nc] !== EMPTY && !(nr === tr && nc === tc)) continue;
+    const i = (nr * C + nc) * 4 + d;
+    dSeen[i] = gen; dTurn[i] = 0;
+    dFromR[i] = r0; dFromC[i] = c0; dFromD[i] = -1;
+    cur.push(i);
+  }
+  for (let turn = 0; turn <= 2; turn++) {
+    while (cur.length) {
+      const i = cur.pop();
+      const d = i & 3, cellIdx = i >> 2;
+      const c = cellIdx % C, r = (cellIdx - c) / C;
+      for (let nd = 0; nd < 4; nd++) {
+        const nt = turn + (nd === d ? 0 : 1);
+        if (nt > 2) continue;
+        const nr = r + DR[nd], nc = c + DC[nd];
+        if (nr < 0 || nc < 0 || nr >= R || nc >= C) continue;
+        if (g[nr][nc] !== EMPTY && !(nr === tr && nc === tc)) continue;
+        const j = (nr * C + nc) * 4 + nd;
+        if (dSeen[j] === gen && dTurn[j] <= nt) continue;
+        dSeen[j] = gen; dTurn[j] = nt;
+        dFromR[j] = r; dFromC[j] = c; dFromD[j] = d;
+        if (nd === d) cur.push(j); else next.push(j);
+      }
+    }
+    cur = next; next = [];
+  }
+  return gen;
+}
+
+/* 이을 수 있으면 꺾인 점들을 돌려준다. 없으면 null. */
+function pathBetween(g, r1, c1, r2, c2) {
+  const gen = search(g, r1, c1, r2, c2);
+  const C = bufC;
+  let best = 9, bd = -1;
+  for (let d = 0; d < 4; d++) {
+    const i = (r2 * C + c2) * 4 + d;
+    if (dSeen[i] === gen && dTurn[i] < best) { best = dTurn[i]; bd = d; }
+  }
+  if (bd < 0) return null;
+  const pts = [];
+  let r = r2, c = c2, d = bd;
+  for (;;) {
+    pts.push([r, c]);
+    const i = (r * C + c) * 4 + d;
+    const pr = dFromR[i], pc = dFromC[i], pd = dFromD[i];
+    if (pd === -1) { pts.push([pr, pc]); break; }
+    r = pr; c = pc; d = pd;
+  }
+  return pts.reverse();
+}
+
+/* 빈 칸에서 닿는 빈 칸을 out 에 r,c 순으로 눌러 담고 개수를 돌려준다.
+   판을 만들 때만 쓴다. 배열을 새로 만들지 않으려고 out 을 받아 쓴다. */
+function reachableEmpty(g, r0, c0, out) {
+  const gen = search(g, r0, c0, -1, -1);
+  const C = bufC;
+  out.length = 0;
+  for (let r = 1; r <= rows; r++) for (let c = 1; c <= cols; c++) {
+    if (g[r][c] !== EMPTY || (r === r0 && c === c0)) continue;
+    const base = (r * C + c) * 4;
+    for (let d = 0; d < 4; d++) {
+      if (dSeen[base + d] === gen) { out.push(r); out.push(c); break; }
+    }
+  }
+  return out.length >> 1;
+}
+
+/* ────────────────────────────────────────────────────────────
+   판 생성 — 반드시 풀리는 판만 만든다.
+
+   푸는 순서를 거꾸로 밟는다. 빈 판에 짝을 하나씩 놓되, 놓을 두 칸이
+   '지금 비어 있는 칸들만 지나서' 이어지는 자리만 고른다. 그러면 게임에서
+   그 짝을 마지막에 놓인 것부터 거꾸로 걷어내면 반드시 끝까지 지워진다.
+
+   고를 때는 이을 곳이 가장 적은 칸부터 잡는다. 아무 데나 잡으면 막판에
+   외딴 칸만 남아 실패한다. 그래도 막히면 처음부터 다시 만들지 말고 직전 몇 수만
+   물린다 — 통째로 다시 만들면 성공률이 4분의 1도 안 나온다.
+
+   종류는 자리를 다 잡은 뒤에 얹는다. 지우는 순서는 위치만으로 정해지므로
+   어느 짝에 어떤 색이 붙든 풀리는 건 변하지 않는다.
+   ──────────────────────────────────────────────────────────── */
+function pairing(cells) {
+  const g = blank();
+  const rest = cells.slice();
+  const hist = [];
+  const reach = [];
+  let budget = cells.length * 8;
+
+  while (rest.length) {
+    let pick = -1, bestN = 1e9, bestList = null;
+    for (let i = 0; i < rest.length; i++) {
+      const n = reachableEmpty(g, rest[i][0], rest[i][1], reach);
+      if (n === 0) { pick = -1; break; }             // 외딴 칸이 생겼다
+      if (n < bestN) { bestN = n; pick = i; bestList = reach.slice(); }
+      if (n === 1) break;
+    }
+
+    if (pick < 0) {
+      if (!hist.length || --budget < 0) return null;
+      const undo = Math.min(hist.length, 2 + (Math.random() * 3 | 0));
+      for (let u = 0; u < undo; u++) {
+        const h = hist.pop();
+        g[h[0]][h[1]] = EMPTY;
+        g[h[2]][h[3]] = EMPTY;
+        rest.push([h[0], h[1]], [h[2], h[3]]);
+      }
+      shuffled(rest);                                // 같은 막다른 길로 또 가지 않게
+      continue;
+    }
+
+    const a = rest[pick];
+    const at = (Math.random() * bestN | 0) * 2;
+    const b = [bestList[at], bestList[at + 1]];
+    g[a[0]][a[1]] = 0;                               // 자리만 채운다
+    g[b[0]][b[1]] = 0;
+    hist.push([a[0], a[1], b[0], b[1]]);
+    rest.splice(pick, 1);
+    rest.splice(rest.findIndex(p => p[0] === b[0] && p[1] === b[1]), 1);
+  }
+  return hist;
+}
+
+function build(cells, pool) {
+  const pairs = pairing(cells);
+  if (!pairs) return null;
+  const g = blank();
+  for (let i = 0; i < pairs.length; i++) {
+    const k = pool[i];
+    g[pairs[i][0]][pairs[i][1]] = k;
+    g[pairs[i][2]][pairs[i][3]] = k;
+  }
+  return g;
+}
+
+function buildRetry(cells, pool, tries) {
+  for (let i = 0; i < (tries || 20); i++) {
+    const g = build(cells, pool);
+    if (g) return g;
+  }
+  return null;
+}
+
+function allCells() {
+  const out = [];
+  for (let r = 1; r <= rows; r++) for (let c = 1; c <= cols; c++) out.push([r, c]);
+  return out;
+}
+function freshPool() {
+  const pool = [];
+  const pairsPerKind = (rows * cols) / kindCount / 2;
+  for (let k = 0; k < kindCount; k++) for (let i = 0; i < pairsPerKind; i++) pool.push(k);
+  return shuffled(pool);
+}
+
+/* ────────────────────────────────────────────────────────────
+   그리기
+   ──────────────────────────────────────────────────────────── */
+let cellW = 44, cellH = 52, gap = 3;
+const STAGE_PAD = 8;     // .stage 의 padding 과 맞춰 둔다
+const RATIO = 1.25;      // 세로/가로. 카드처럼 보이게 세로를 길게 쓴다
+const MAX_W = 64;
+
+/* 타일 크기는 stage 의 실제 크기에서 역산한다.
+   판 전체 폭 = cols*cellW + (cols-1)*gap 이므로 간격은 (열수-1) 번만 빠진다.
+   열 수만큼 빼면 폭이 남는데도 타일이 작아진다.
+
+   세로 비율은 '남는 세로가 있을 때만' 쓴다. 가로를 먼저 정하고 세로는 여유가
+   허락하는 만큼만 늘린다 — 비율을 먼저 맞추면 세로가 빠듯한 작은 폰에서
+   가로가 깎여 누르기 어려워진다. 그런 화면에서는 정사각으로 되돌아간다. */
+function measure() {
+  const stage = document.querySelector('.stage');
+  gap = window.innerWidth < 480 ? 2 : 3;
+  const availW = stage.clientWidth - STAGE_PAD * 2;
+  const availH = stage.clientHeight - STAGE_PAD * 2;
+  const byW = (availW - (cols - 1) * gap) / cols;
+  const byH = (availH - (rows - 1) * gap) / rows;
+
+  /* 사진은 비율이 틀어지면 인물이 찌그러진다. 비율을 먼저 지키고 가로를 줄인다. */
+  cellW = Math.floor(Math.min(byW, byH / RATIO));
+  cellW = Math.max(24, Math.min(cellW, MAX_W));   // 24 밑으로는 줄이지 않고 stage 를 스크롤한다
+  /* 올림하면 세로가 1px 넘쳐 스크롤이 생긴다. 내림이 안전하고, 비율이 1.25 에서
+     1% 안쪽으로 어긋나는 건 눈에 띄지 않는다. */
+  cellH = Math.floor(cellW * RATIO);
+}
+
+function pxX(i) { return i * (cellW + gap); }
+function pxY(i) { return i * (cellH + gap); }
+
+function render() {
+  const board = document.getElementById('board');
+  const wire = document.getElementById('wire');
+  [...board.querySelectorAll('.tile')].forEach(t => t.remove());
+  tiles.clear();
+  const bw = pxX(cols) - gap, bh = pxY(rows) - gap;
+  board.style.width = bw + 'px';
+  board.style.height = bh + 'px';
+  wire.setAttribute('width', bw);
+  wire.setAttribute('height', bh);
+
+  for (let r = 1; r <= rows; r++) for (let c = 1; c <= cols; c++) {
+    if (grid[r][c] === EMPTY) continue;
+    const el = document.createElement('div');
+    el.className = 'tile';
+    el.style.width = cellW + 'px';
+    el.style.height = cellH + 'px';
+    el.style.left = pxX(c - 1) + 'px';
+    el.style.top = pxY(r - 1) + 'px';
+    paintTile(el, grid[r][c], cellW, cellH);
+    el.addEventListener('click', () => tap(r, c));
+    board.appendChild(el);
+    tiles.set(key(r, c), el);
+  }
+  document.getElementById('left').textContent = left;
+}
+
+function drawWire(pts) {
+  const wire = document.getElementById('wire');
+  const hx = cellW / 2, hy = cellH / 2;
+  const d = pts.map(([r, c]) => (pxX(c - 1) + hx) + ',' + (pxY(r - 1) + hy)).join(' ');
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+  line.setAttribute('points', d);
+  line.setAttribute('fill', 'none');
+  line.setAttribute('stroke', '#fff');
+  line.setAttribute('stroke-width', '3');
+  line.setAttribute('stroke-linecap', 'round');
+  line.setAttribute('stroke-linejoin', 'round');
+  line.setAttribute('opacity', '.95');
+  wire.appendChild(line);
+  setTimeout(() => line.remove(), 260);
+}
+
+/* ────────────────────────────────────────────────────────────
+   조작
+   ──────────────────────────────────────────────────────────── */
+function tap(r, c) {
+  if (busy || grid[r][c] === EMPTY) return;
+  const el = tiles.get(key(r, c));
+  if (sel && sel[0] === r && sel[1] === c) { el.classList.remove('sel'); sel = null; return; }
+  if (!sel) { sel = [r, c]; el.classList.add('sel'); return; }
+
+  const [pr, pc] = sel;
+  const prev = tiles.get(key(pr, pc));
+  if (grid[pr][pc] !== grid[r][c]) {
+    prev.classList.remove('sel');
+    sel = [r, c]; el.classList.add('sel');
+    return;
+  }
+  const pts = pathBetween(grid, pr, pc, r, c);
+  if (!pts) {
+    prev.classList.remove('sel');
+    sel = [r, c]; el.classList.add('sel');
+    return;
+  }
+
+  busy = true;
+  prev.classList.remove('sel');
+  drawWire(pts);
+  grid[pr][pc] = EMPTY;
+  grid[r][c] = EMPTY;
+  left -= 2;
+  document.getElementById('left').textContent = left;
+  prev.classList.add('gone');
+  el.classList.add('gone');
+  sel = null;
+  setTimeout(() => {
+    prev.remove(); el.remove();
+    tiles.delete(key(pr, pc)); tiles.delete(key(r, c));
+    busy = false;
+    if (left === 0) finish();
+    else if (!anyMove()) stuck();
+  }, 200);
+}
+
+function remainingCells() {
+  const out = [];
+  for (let r = 1; r <= rows; r++) for (let c = 1; c <= cols; c++)
+    if (grid[r][c] !== EMPTY) out.push([r, c]);
+  return out;
+}
+
+function anyMove() { return findPair() !== null; }
+
+function findPair() {
+  const byKind = new Map();
+  for (const [r, c] of remainingCells()) {
+    const k = grid[r][c];
+    if (!byKind.has(k)) byKind.set(k, []);
+    byKind.get(k).push([r, c]);
+  }
+  for (const list of byKind.values()) {
+    for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+      if (pathBetween(grid, list[i][0], list[i][1], list[j][0], list[j][1]))
+        return [list[i], list[j]];
+    }
+  }
+  return null;
+}
+
+function reshuffle() {
+  const cells = remainingCells();
+  if (!cells.length) return;
+  const count = new Map();
+  for (const [r, c] of cells) count.set(grid[r][c], (count.get(grid[r][c]) || 0) + 1);
+  const pool = [];
+  for (const [k, n] of count) for (let i = 0; i < n / 2; i++) pool.push(k);
+  shuffled(pool);
+  const g = buildRetry(cells, pool, 80);
+  if (!g) return;
+  grid = g;
+  sel = null;
+  render();
+}
+
+function stuck() {
+  show('막혔다', '더 이을 수 있는 짝이 없다. 남은 블럭을 다시 풀 수 있는 배치로 섞는다.', '섞기', () => {
+    hide(); reshuffle();
+  });
+}
+
+function finish() {
+  stop();
+  const secs = Math.floor((Date.now() - started) / 1000);
+  const k = 'shisen.best.' + KINDS;
+  const old = Number(localStorage.getItem(k) || 0);
+  let note = '';
+  if (!old || secs < old) { localStorage.setItem(k, secs); note = old ? ' · 최고 기록 경신' : ' · 첫 기록'; }
+  else note = ' · 최고 ' + clock(old);
+  show('완성', (rows * cols) + '장을 <b>' + clock(secs) + '</b> 만에 지웠다.' + note,
+       '새 판', () => { hide(); start(); });
+}
+
+function clock(s) {
+  return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+}
+
+function show(title, body, btn, go) {
+  document.getElementById('sheetTitle').textContent = title;
+  document.getElementById('sheetBody').innerHTML = body;
+  document.getElementById('sheetGo').textContent = btn;
+  document.getElementById('sheetGo').onclick = go;
+  document.getElementById('sheet').classList.add('on');
+}
+function hide() { document.getElementById('sheet').classList.remove('on'); }
+
+function stop() { if (ticker) { clearInterval(ticker); ticker = null; } }
+function run() {
+  stop();
+  started = Date.now();
+  ticker = setInterval(() => {
+    document.getElementById('clock').textContent = clock(Math.floor((Date.now() - started) / 1000));
+  }, 500);
+}
+
+/* ────────────────────────────────────────────────────────────
+   시작
+   ──────────────────────────────────────────────────────────── */
+function dims() {
+  const d = window.innerWidth >= 760 ? WIDE : NARROW;
+  return { rows: d[0], cols: d[1] };
+}
+
+function start() {
+  kindCount = KINDS;
+  const d = dims();
+  rows = d.rows; cols = d.cols;
+  measure();
+  const g = buildRetry(allCells(), freshPool(), 80);
+  if (!g) { show('실패', '판을 만들지 못했다. 다시 시도한다.', '다시', () => { hide(); start(); }); return; }
+  grid = g;
+  left = rows * cols;
+  sel = null; busy = false;
+  render();
+  run();
+}
+
+document.getElementById('again').addEventListener('click', () => { hide(); start(); });
+document.getElementById('shuffle').addEventListener('click', () => reshuffle());
+document.getElementById('hint').addEventListener('click', () => {
+  const p = findPair();
+  if (!p) { stuck(); return; }
+  for (const [r, c] of p) {
+    const el = tiles.get(key(r, c));
+    if (el) { el.classList.add('hint'); setTimeout(() => el.classList.remove('hint'), 1600); }
+  }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && sel) { tiles.get(key(sel[0], sel[1])).classList.remove('sel'); sel = null; }
+  if (e.key === 'h') document.getElementById('hint').click();
+  if (e.key === 's') document.getElementById('shuffle').click();
+});
+/* 모바일은 주소창이 여닫힐 때마다 resize 가 온다. 몰아서 한 번만 다시 그린다.
+   가로/세로가 바뀌어 판 모양(rows·cols)이 달라져도 지금 판은 그대로 두고 크기만
+   맞춘다 — 여기서 새 판을 만들면 진행이 날아간다. 새 모양은 다음 판부터다. */
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { measure(); render(); }, 150);
+});
+
+start();
+</script>
+</body>
+</html>
